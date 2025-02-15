@@ -1,0 +1,6 @@
+gradio
+tiktoken
+tqdm
+chromadb
+sentence-transformers
+huggingface_hub
