@@ -9,7 +9,11 @@ os.makedirs(CHROMA_DB_FOLDER, exist_ok=True)
 
 # 📌 Ścieżka do katalogu na bazy wektorowe w folderze `repository/chroma_db`
 WEAVIATE_DB_FOLDER = os.path.join(BASE_DIR, "..", "repository", "weaviate_db")
-os.makedirs(CHROMA_DB_FOLDER, exist_ok=True)
+os.makedirs(WEAVIATE_DB_FOLDER, exist_ok=True)
+
+# 📌 Ścieżka do katalogu na LanceDB
+LANCE_DB_FOLDER = os.path.join(BASE_DIR, "..", "repository", "lance_db")
+os.makedirs(LANCE_DB_FOLDER, exist_ok=True)
 
 # 📌 Folder cache do przechowywania/odczytu modeli w folderze `repository/downloaded_models`
 MODEL_FOLDER = os.path.join(BASE_DIR, "..", "repository", "downloaded_models")

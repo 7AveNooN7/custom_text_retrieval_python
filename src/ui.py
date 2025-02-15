@@ -1,45 +1,62 @@
+# ui.py (fragment)
+
 import gradio as gr
 
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.embeddings import list_cached_models, download_model_to_cache
-from src.database_utils import (
-    create_new_database, 
+
+# Importujemy osobno utils dla Chroma i Lance
+from src.chroma_db_utils import (
+    create_new_database,
     get_databases_with_info
 )
-from src.search_utils import (
-    retrieve_text, 
-    count_tokens
+from src.lance_db_utils import (
+    create_new_database_lance,
+    get_databases_with_info_lance
 )
 
+from src.search_utils import (
+    retrieve_text,
+    count_tokens
+)
+# ... lub analogicznie "retrieve_text_lance" w innym miejscu ...
 
-def ui_create_database(db_name, files, chunk_size, chunk_overlap, model_name):
+def ui_create_database(db_engine, db_name, files, chunk_size, chunk_overlap, model_name):
     """
     Callback do przycisku "Utwórz bazę".
     """
     if not files or len(files) == 0:
         return (
             "❌ Nie wybrano żadnego pliku!",
-            gr.update(choices=get_databases_with_info())
+            gr.update(choices=[])  # zaktualizujemy dropdown baz
         )
 
-    result = create_new_database(db_name, files, chunk_size, chunk_overlap, model_name)
-    # Odświeżamy dropdown
-    return result, gr.update(choices=get_databases_with_info())
+    if db_engine == "ChromaDB":
+        result = create_new_database(db_name, files, chunk_size, chunk_overlap, model_name)
+        # Odświeżamy listę baz Chroma
+        db_list = get_databases_with_info()
+    elif db_engine == "LanceDB":
+        # LanceDB
+        result = create_new_database_lance(db_name, files, chunk_size, chunk_overlap, model_name)
+        # Odświeżamy listę baz Lance
+        db_list = get_databases_with_info_lance()
 
+    return result, gr.update(choices=db_list)
 
-def ui_search_database(db_name, query, top_k):
-    """
-    Callback do przycisku "Szukaj".
-    """
-    retrieved_text = retrieve_text(db_name, query, top_k)
+# Przy wyszukiwaniu musimy też zdecydować, czy to Chroma czy Lance
+def ui_search_database(db_engine, db_name, query, top_k):
+    if db_engine == "ChromaDB":
+        retrieved_text = retrieve_text(db_name, query, top_k)
+    else:
+        from src.lance_db_utils import retrieve_text_lance
+        retrieved_text = retrieve_text_lance(db_name, query, top_k)
+
     token_count = count_tokens(retrieved_text)
     return token_count, retrieved_text
 
 
 def ui_add_model(model_name):
-    """
-    Callback do pobierania modelu z Hugging Face do cache.
-    """
+    # bez zmian:
     try:
         target_dir = download_model_to_cache(model_name)
         new_model_list = list_cached_models()
@@ -55,10 +72,6 @@ def ui_add_model(model_name):
 
 
 def build_ui():
-    """
-    Główna funkcja budująca interfejs Gradio.
-    Zwraca obiekt (Blocks), który można uruchomić w app.py
-    """
     with gr.Blocks() as app:
         gr.Markdown("# 🔍 Wyszukiwarka dokumentów i Zarządzanie Bazami")
 
@@ -66,6 +79,13 @@ def build_ui():
         #   Zakładka 1: Tworzenie nowej bazy
         ##################################################
         with gr.Tab("📂 Tworzenie nowej bazy"):
+            # Nowe dropdown do wyboru silnika
+            db_engine_dropdown = gr.Dropdown(
+                choices=["ChromaDB", "LanceDB"],
+                value="ChromaDB",
+                label="Wybierz silnik wektorowy"
+            )
+
             db_name_input = gr.Textbox(label="🆕 Nazwa nowej bazy")
             file_uploader = gr.Files(
                 label="📤 Wybierz pliki `.txt` do przesłania:",
@@ -94,8 +114,16 @@ def build_ui():
         #   Zakładka 2: Wyszukiwanie w bazie
         ##################################################
         with gr.Tab("🔎 Wyszukiwanie w bazie"):
+            # Najpierw dropdown do wyboru silnika
+            search_engine_dropdown = gr.Dropdown(
+                choices=["ChromaDB", "LanceDB"],
+                value="ChromaDB",
+                label="Wybierz silnik wektorowy"
+            )
+
+            # Drugi dropdown z bazami – ale będzie dynamicznie aktualizowany
             db_dropdown = gr.Dropdown(
-                choices=get_databases_with_info(),
+                choices=[],
                 label="📂 Wybierz bazę wektorową"
             )
 
@@ -123,19 +151,38 @@ def build_ui():
             add_model_btn = gr.Button("⬇️ Pobierz model do cache")
             add_model_output = gr.Textbox(label="Status dodawania modelu")
 
-        # Logika przycisków i callbacki
+        # --- LOGIKA AKCJI / CALLBACKI ---
+
+        # Przycisk tworzenia nowej bazy
         create_db_btn.click(
             fn=ui_create_database,
-            inputs=[db_name_input, file_uploader, chunk_size_slider, chunk_overlap_slider, model_dropdown],
+            inputs=[db_engine_dropdown, db_name_input, file_uploader, chunk_size_slider, chunk_overlap_slider, model_dropdown],
             outputs=[create_db_output, db_dropdown]
         )
 
+        # Kiedy zmienia się "search_engine_dropdown", musimy odświeżyć listę baz
+        # zależnie od tego, czy to ChromaDB czy LanceDB:
+        def refresh_db_list(engine_choice):
+            if engine_choice == "ChromaDB":
+                return gr.update(choices=get_databases_with_info())
+            else:
+                from src.lance_db_utils import get_databases_with_info_lance
+                return gr.update(choices=get_databases_with_info_lance())
+
+        search_engine_dropdown.change(
+            fn=refresh_db_list,
+            inputs=search_engine_dropdown,
+            outputs=db_dropdown
+        )
+
+        # Przycisk szukania
         search_btn.click(
             fn=ui_search_database, 
-            inputs=[db_dropdown, query_input, top_k_slider], 
+            inputs=[search_engine_dropdown, db_dropdown, query_input, top_k_slider], 
             outputs=[token_output, search_output]
         )
 
+        # Dodawanie modelu
         add_model_btn.click(
             fn=ui_add_model, 
             inputs=model_name_input_add,
