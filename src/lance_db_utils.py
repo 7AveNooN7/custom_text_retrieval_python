@@ -127,7 +127,7 @@ def create_new_database_lance(db_name: str, selected_files, chunk_size: int, chu
 
     return f"✅ New LanceDB `{db_name}` has been created."
 
-def get_databases_with_info_lance():
+def get_databases_with_info_lance_db():
     """
     Zwraca listę baz LanceDB (analogicznie do Chroma).
     Postać: [(label, value), ...]
@@ -158,7 +158,7 @@ def get_databases_with_info_lance():
 
     return results
 
-def retrieve_text_lance(db_name: str, query: str, top_k: int):
+def retrieve_text_from_lance_db(db_name: str, query: str, top_k: int):
     """
     Wyszukiwanie w LanceDB bazując na kolumnie `embedding`.
     """
