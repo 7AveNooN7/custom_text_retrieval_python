@@ -1,10 +1,10 @@
 import gradio as gr
 import json
 import os
-from src.embeddings import list_cached_models, download_model_to_cache
+from src.embedding_model_utils import get_downloaded_models, download_modem_from_hf
 from src.enums.embedding_type import EmbeddingType
 
-def add_model_tab():
+def add_model_tab(model_dropdown):
     with gr.Tab("🆕 Dodawanie modelu"):
         gr.Markdown("Wpisz nazwę modelu z Hugging Face i wybierz, jakie embeddingi obsługuje.")
 
@@ -18,15 +18,20 @@ def add_model_tab():
             value=[EmbeddingType.DENSE.value]
         )
 
-        add_model_btn = gr.Button("⬇️ Pobierz model do cache")
+        add_model_btn = gr.Button("⬇️ Pobierz model")
         add_model_output = gr.Textbox(label="Status dodawania modelu")
 
-        add_model_btn.click(ui_add_model, [model_name_input_add, embedding_types], [add_model_output])
+
+        add_model_btn.click(
+            ui_add_model,
+            [model_name_input_add, embedding_types],
+            [add_model_output, model_dropdown]
+        )
 
 
 def ui_add_model(model_name, selected_embedding_types):
     try:
-        target_dir = download_model_to_cache(model_name)
+        target_dir = download_modem_from_hf(model_name)
 
         validated_embedding_types = [emb_type for emb_type in selected_embedding_types if
                                      emb_type in EmbeddingType.list()]
@@ -37,7 +42,7 @@ def ui_add_model(model_name, selected_embedding_types):
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-        new_model_list = list_cached_models()
+        new_model_list = get_downloaded_models()
         return f"✅ Pomyślnie pobrano model '{model_name}'!\nFolder: {target_dir}", gr.update(choices=new_model_list)
 
     except Exception as e:

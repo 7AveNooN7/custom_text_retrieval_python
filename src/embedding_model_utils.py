@@ -1,30 +1,35 @@
 import os
 import shutil
 import json
-from huggingface_hub import snapshot_download
+from typing import List
+
 from sentence_transformers import SentenceTransformer
 from src.config import MODEL_FOLDER
-from src.enums.embedding_type import EmbeddingType
+from src.models.downloaded_model_info import DownloadedModelInfo
 
-def list_cached_models():
+
+def get_downloaded_models() -> List[DownloadedModelInfo]:
     """
-    Przechodzi po podfolderach w MODEL_FOLDER.
-    Za model uznajemy taki folder, gdzie jest plik 'metadata.json'.
-    Zwraca listę modeli w formacie (nazwa modelu z metadata.json, nazwa folderu).
+    Przechodzi przez podfoldery w model_folder i wyszukuje modele.
+    Za model uznajemy katalog, który zawiera plik 'metadata.json'.
+    Zwraca listę obiektów DownloadedModelInfo.
     """
-    models = []
-    for entry in os.scandir(MODEL_FOLDER):
-        if entry.is_dir():
-            metadata_path = os.path.join(entry.path, "metadata.json")
-            if os.path.isfile(metadata_path):
+    downloaded_models = []
+
+    for model_folder in os.scandir(MODEL_FOLDER):
+        if model_folder.is_dir():
+            metadata_json_path = os.path.join(model_folder.path, "metadata.json")
+            if os.path.isfile(metadata_json_path):
                 try:
-                    with open(metadata_path, "r", encoding="utf-8") as f:
-                        metadata = json.load(f)
-                        model_name = metadata.get("model_name", entry.name)
-                        models.append((model_name, entry.name))  # (label, value) dla UI
-                except Exception as e:
-                    print(f"⚠️ Błąd odczytu metadata.json w {entry.name}: {e}")
-    return models
+                    with open(metadata_json_path, "r", encoding="utf-8") as metadata_json_file:
+                        json_data = json.load(metadata_json_file)
+                        model_info = DownloadedModelInfo.from_json(json_data=json_data, folder_name=model_folder.name)
+                        downloaded_models.append(model_info)
+                except Exception as error:
+                    print(f"⚠️ Błąd odczytu metadata.json w katalogu '{model_folder.name}': {error}")
+
+    print(f"Pobrane modele: {downloaded_models}")  # Debugging
+    return downloaded_models
 
 def load_embedding_model(model_folder_name: str):
     """
@@ -49,7 +54,7 @@ def load_embedding_model(model_folder_name: str):
         trust_remote_code=True
     )
 
-def download_model_to_cache(model_name: str, selected_embedding_types: list):
+def download_modem_from_hf(model_name: str, selected_embedding_types: list):
     """
     Pobiera model z Hugging Face do lokalnego cache (MODEL_FOLDER) i zapisuje metadata.json.
     """
@@ -61,6 +66,7 @@ def download_model_to_cache(model_name: str, selected_embedding_types: list):
         shutil.rmtree(target_dir)
 
     # Pobieramy model
+    from huggingface_hub import snapshot_download
     snapshot_download(
         repo_id=model_name,
         local_dir=target_dir,

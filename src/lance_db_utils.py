@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from src.db_utils import split_text_into_chunks, is_valid_db_name
 from src.config import LANCE_DB_FOLDER
-from src.embeddings import load_embedding_model
+from src.embedding_model_utils import load_embedding_model
 
 
 def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, chunk_overlap: int, embedding_model_name: str):

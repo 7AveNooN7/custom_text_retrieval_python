@@ -9,7 +9,7 @@ from chromadb.config import Settings
 
 from src.db_utils import generate_id, is_valid_db_name, split_text_into_chunks
 from src.config import CHROMA_DB_FOLDER
-from src.embeddings import load_embedding_model
+from src.embedding_model_utils import load_embedding_model
 
 
 def create_new_database_chroma_db(db_name: str, 
