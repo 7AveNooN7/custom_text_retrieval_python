@@ -1,10 +1,9 @@
-from src.ui import build_ui
+from src.ui.main_view import build_ui
 
 def main():
-    
-    app = build_ui()
-    # Uruchamiamy Gradio
-    app.launch(debug=True)
+    if __name__ == "__main__":
+        app = build_ui()
+        app.launch()
 
 if __name__ == "__main__":
     main()

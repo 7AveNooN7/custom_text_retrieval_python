@@ -1,6 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch
+
 gradio
 tiktoken
 tqdm
 chromadb
 sentence-transformers
 huggingface_hub
+lancedb
+chromadb
+huggingface-hub
+numpy
+pandas
+pyarrow

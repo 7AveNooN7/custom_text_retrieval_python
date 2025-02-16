@@ -7,40 +7,12 @@ from tqdm import tqdm
 import chromadb
 from chromadb.config import Settings
 
+from src.db_utils import generate_id, is_valid_db_name, split_text_into_chunks
 from src.config import CHROMA_DB_FOLDER
 from src.embeddings import load_embedding_model
 
 
-def is_valid_db_name(name: str) -> bool:
-    """
-    Waliduje nazwę bazy – musi mieć 3-63 znaki i zawierać tylko [a-zA-Z0-9_-].
-    """
-    if not (3 <= len(name) <= 63):
-        return False
-    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$", name):
-        return False
-    if ".." in name:
-        return False
-    return True
-
-
-def generate_id(text: str, filename: str, index: int) -> str:
-    return hashlib.md5(f"{filename}_{index}_{text}".encode()).hexdigest()
-
-
-def split_text_into_chunks(text: str, chunk_size: int, chunk_overlap: int):
-    step = chunk_size - chunk_overlap
-    if step <= 0:
-        raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
-
-    chunks = []
-    for i in range(0, len(text), step):
-        chunk = text[i : i + chunk_size]
-        chunks.append(chunk)
-    return chunks
-
-
-def create_new_database(db_name: str, 
+def create_new_database_chroma_db(db_name: str, 
                         selected_files, 
                         chunk_size: int, 
                         chunk_overlap: int, 
@@ -55,7 +27,7 @@ def create_new_database(db_name: str,
     """
     # Walidacja nazwy bazy
     if not is_valid_db_name(db_name):
-        return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, myślników i podkreśleń. Długość: 3-63 znaki."
+        return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki."
 
     # Wczytanie wybranego modelu embeddingowego (z cache)
     embedding_model = load_embedding_model(embedding_model_name)
@@ -111,38 +83,6 @@ def create_new_database(db_name: str,
 
     return f"✅ Nowa baza `{db_name}` została utworzona z użyciem modelu `{embedding_model_name}`!"
 
-
-def get_databases_with_info_chroma_db():
-    """
-    Zwraca listę baz w postaci listy krotek (label, value), gdzie:
-    - label: np. "nazwa_bazy | Model: X | Chunk: Y | Overlap: Z"
-    - value: prawdziwa nazwa bazy (np. "nazwa_bazy")
-    """
-    results = []
-    if not os.path.exists(CHROMA_DB_FOLDER):
-        return results
-
-    for db_name in os.listdir(CHROMA_DB_FOLDER):
-        db_path = os.path.join(CHROMA_DB_FOLDER, db_name)
-        if not os.path.isdir(db_path):
-            continue
-
-        model = "N/A"
-        csize = "N/A"
-        coverlap = "N/A"
-
-        metadata_path = os.path.join(db_path, "metadata.json")
-        if os.path.isfile(metadata_path):
-            with open(metadata_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            model = data.get("embedding_model", "N/A")
-            csize = data.get("chunk_size", "N/A")
-            coverlap = data.get("chunk_overlap", "N/A")
-
-        label = f"{db_name} | Model: {model} | Chunk: {csize} | Overlap: {coverlap}"
-        results.append((label, db_name))
-
-    return results
 
 def retrieve_text_from_chroma_db(db_name: str, query: str, top_k: int) -> str:
     """

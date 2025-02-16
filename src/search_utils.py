@@ -1,8 +1,7 @@
 import tiktoken
 import gradio as gr
-
-from src.chroma_db_utils import get_databases_with_info_chroma_db
-
+from src.db_utils import get_databases_with_info
+from src.enums.database_type import DatabaseType
 
 # Tokenizer tiktoken
 tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -16,11 +15,9 @@ def count_tokens(text: str) -> int:
 
 
 # Kiedy zmienia się "search_engine_dropdown", musimy odświeżyć listę baz
-        # zależnie od tego, czy to ChromaDB czy LanceDB:
-def refresh_db_list(engine_choice):
-    if engine_choice == "ChromaDB":
-        return gr.update(choices=get_databases_with_info_chroma_db())
-    elif engine_choice == "LanceDB":
-        from src.lance_db_utils import get_databases_with_info_lance_db
-        return gr.update(choices=get_databases_with_info_lance_db())
+# zależnie od tego, czy to ChromaDB czy LanceDB:
+def refresh_db_list(database_type: str):
+    database_type = DatabaseType(database_type) # TRANSFORMACJA ENUM.VALUE NA CZYSTY ENUM
+    return gr.update(choices=get_databases_with_info(database_type))
+
 

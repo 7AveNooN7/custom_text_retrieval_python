@@ -2,52 +2,22 @@
 
 import os
 import json
-import re
 import hashlib
-import pandas as pd
 import numpy as np
-from tqdm import tqdm
 
 import lancedb
 import pandas as pd
 import pyarrow as pa
 
+from src.db_utils import split_text_into_chunks, is_valid_db_name
 from src.config import LANCE_DB_FOLDER
 from src.embeddings import load_embedding_model
 
 
-def is_valid_db_name(name: str) -> bool:
-    """
-    Waliduje nazwę bazy – (ta sama funkcja co w Chroma).
-    """
-    if not (3 <= len(name) <= 63):
-        return False
-    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$", name):
-        return False
-    if ".." in name:
-        return False
-    return True
-
-def generate_id(text: str, filename: str, index: int) -> str:
-    """Generuje unikatowe ID (jak w Chroma)."""
-    return hashlib.md5(f"{filename}_{index}_{text}".encode()).hexdigest()
-
-def split_text_into_chunks(text: str, chunk_size: int, chunk_overlap: int):
-    """Rozbicie na fragmenty (jak w Chroma)."""
-    step = chunk_size - chunk_overlap
-    if step <= 0:
-        raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
-
-    chunks = []
-    for i in range(0, len(text), step):
-        chunk = text[i : i + chunk_size]
-        chunks.append(chunk)
-    return chunks
-
-def create_new_database_lance(db_name: str, selected_files, chunk_size: int, chunk_overlap: int, embedding_model_name: str):
-    # Validate database name
-    if not (3 <= len(db_name) <= 63) or not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$", db_name):
-        return "❌ Invalid database name!"
+def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, chunk_overlap: int, embedding_model_name: str):
+    # Walidacja nazwy bazy
+    if not is_valid_db_name(db_name):
+        return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki."
 
     db_path = os.path.join(LANCE_DB_FOLDER, db_name)
     os.makedirs(db_path, exist_ok=True)
@@ -59,12 +29,6 @@ def create_new_database_lance(db_name: str, selected_files, chunk_size: int, chu
     db = lancedb.connect(db_path)
 
     all_records = []
-
-    def split_text_into_chunks(text, csize, coverlap):
-        step = csize - coverlap
-        if step <= 0:
-            raise ValueError("Overlap must be smaller than chunk_size!")
-        return [text[i:i+csize] for i in range(0, len(text), step)]
 
     for file_obj in selected_files:
         with open(file_obj.name, "r", encoding="utf-8") as f:
@@ -127,36 +91,6 @@ def create_new_database_lance(db_name: str, selected_files, chunk_size: int, chu
 
     return f"✅ New LanceDB `{db_name}` has been created."
 
-def get_databases_with_info_lance_db():
-    """
-    Zwraca listę baz LanceDB (analogicznie do Chroma).
-    Postać: [(label, value), ...]
-    """
-    results = []
-    if not os.path.exists(LANCE_DB_FOLDER):
-        return results
-
-    for db_name in os.listdir(LANCE_DB_FOLDER):
-        db_path = os.path.join(LANCE_DB_FOLDER, db_name)
-        if not os.path.isdir(db_path):
-            continue
-
-        model = "N/A"
-        csize = "N/A"
-        coverlap = "N/A"
-
-        metadata_path = os.path.join(db_path, "metadata.json")
-        if os.path.isfile(metadata_path):
-            with open(metadata_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            model = data.get("embedding_model", "N/A")
-            csize = data.get("chunk_size", "N/A")
-            coverlap = data.get("chunk_overlap", "N/A")
-
-        label = f"{db_name} | Model: {model} | Chunk: {csize} | Overlap: {coverlap}"
-        results.append((label, db_name))
-
-    return results
 
 def retrieve_text_from_lance_db(db_name: str, query: str, top_k: int):
     """
