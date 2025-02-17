@@ -12,9 +12,10 @@ import pyarrow as pa
 from src.db_utils import split_text_into_chunks, is_valid_db_name
 from src.config import LANCE_DB_FOLDER
 from src.embedding_model_utils import load_embedding_model
+from src.models.downloaded_model_info import DownloadedModelInfo
 
 
-def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, chunk_overlap: int, embedding_model_name: str):
+def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, chunk_overlap: int, model_instance: DownloadedModelInfo):
     # Walidacja nazwy bazy
     if not is_valid_db_name(db_name):
         return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki."
@@ -23,7 +24,7 @@ def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, 
     os.makedirs(db_path, exist_ok=True)
 
     # Load embedding model
-    embedding_model = load_embedding_model(embedding_model_name)
+    embedding_model = load_embedding_model(model_instance)
 
     # Connect to LanceDB
     db = lancedb.connect(db_path)
@@ -31,7 +32,7 @@ def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, 
     all_records = []
 
     for file_obj in selected_files:
-        with open(file_obj.name, "r", encoding="utf-8") as f:
+        with open(file_obj.model_name, "r", encoding="utf-8") as f:
             text = f.read()
 
         chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
@@ -44,15 +45,15 @@ def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, 
             if emb.ndim != 1:
                 return "❌ Embedding model returned an unexpected shape!"
 
-            record_id = hashlib.md5(f"{file_obj.name}_{idx}_{chunk}".encode()).hexdigest()
+            record_id = hashlib.md5(f"{file_obj.model_name}_{idx}_{chunk}".encode()).hexdigest()
 
             all_records.append({
                 "id": record_id,
                 "text": chunk,
-                "source": os.path.basename(file_obj.name),
+                "source": os.path.basename(file_obj.model_name),
                 "fragment_id": idx,
                 "embedding": emb.tolist(),  # Convert NumPy array to list
-                "embedding_model": embedding_model_name
+                "embedding_model": model_instance.model_name
             })
 
     if not all_records:
@@ -82,7 +83,7 @@ def create_new_database_lance_db(db_name: str, selected_files, chunk_size: int, 
     # Save metadata
     metadata = {
         "db_name": db_name,
-        "embedding_model": embedding_model_name,
+        "embedding_model": model_instance.model_name,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
     }

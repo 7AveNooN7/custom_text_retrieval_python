@@ -1,22 +1,17 @@
 import os
-import re
 import json
-import hashlib
-from tqdm import tqdm
-
 import chromadb
-from chromadb.config import Settings
-
+from tqdm import tqdm
 from src.db_utils import generate_id, is_valid_db_name, split_text_into_chunks
 from src.config import CHROMA_DB_FOLDER
-from src.embedding_model_utils import load_embedding_model
+from src.embedding_model_utils import load_embedding_model, get_targeted_model_instance
+from src.models.downloaded_model_info import DownloadedModelInfo
 
-
-def create_new_database_chroma_db(db_name: str, 
-                        selected_files, 
-                        chunk_size: int, 
-                        chunk_overlap: int, 
-                        embedding_model_name: str):
+def create_new_database_chroma_db(db_name: str,
+                                  selected_files,
+                                  chunk_size: int,
+                                  chunk_overlap: int,
+                                  model_instance: DownloadedModelInfo):
     """
     Tworzy nową bazę wektorową Chroma:
       - Waliduje nazwę bazy
@@ -30,19 +25,22 @@ def create_new_database_chroma_db(db_name: str,
         return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki."
 
     # Wczytanie wybranego modelu embeddingowego (z cache)
-    embedding_model = load_embedding_model(embedding_model_name)
+    print(f'create_new_database_chroma_db model_instance:name: {model_instance.model_name}')
+    embedding_model = load_embedding_model(model_instance)
 
     # Inicjalizacja (lub otwarcie) bazy wektorowej Chroma
     db_path = os.path.join(CHROMA_DB_FOLDER, db_name)
     chroma_client = chromadb.PersistentClient(path=db_path)
-    collection = chroma_client.get_or_create_collection(name=db_name)
+    collection = chroma_client.get_or_create_collection(
+        name=db_name
+    )
 
     texts, metadata, ids = [], [], []
 
     # Iterujemy po wybranych plikach
     for file_obj in selected_files:
         # file_obj.name to pełna ścieżka tymczasowa, może być różna w Gradio
-        with open(file_obj.name, "r", encoding="utf-8") as f:
+        with open(file_obj.model_name, "r", encoding="utf-8") as f:
             text = f.read()
 
         try:
@@ -53,11 +51,11 @@ def create_new_database_chroma_db(db_name: str,
         for idx, chunk in enumerate(chunks):
             texts.append(chunk)
             metadata.append({
-                "source": os.path.basename(file_obj.name),
+                "source": os.path.basename(file_obj.model_name),
                 "fragment_id": idx,
-                "embedding_model": embedding_model_name,
+                "embedding_model": model_instance.model_name,
             })
-            ids.append(generate_id(chunk, file_obj.name, idx))
+            ids.append(generate_id(chunk, file_obj.model_name, idx))
 
     # Dodawanie do kolekcji
     if texts:
@@ -73,7 +71,7 @@ def create_new_database_chroma_db(db_name: str,
     # Zapisujemy metadane w pliku metadata.json
     db_metadata = {
         "db_name": db_name,
-        "embedding_model": embedding_model_name,
+        "embedding_model": model_instance.model_name,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap
     }
@@ -81,7 +79,7 @@ def create_new_database_chroma_db(db_name: str,
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(db_metadata, f, ensure_ascii=False, indent=2)
 
-    return f"✅ Nowa baza `{db_name}` została utworzona z użyciem modelu `{embedding_model_name}`!"
+    return f"✅ Nowa baza `{db_name}` została utworzona z użyciem modelu `{model_instance.model_name}`!"
 
 
 def retrieve_text_from_chroma_db(db_name: str, query: str, top_k: int) -> str:
@@ -92,19 +90,17 @@ def retrieve_text_from_chroma_db(db_name: str, query: str, top_k: int) -> str:
     db_path = os.path.join(CHROMA_DB_FOLDER, db_name)
     metadata_path = os.path.join(db_path, "metadata.json")
 
-    # Domyślny fallback, gdy brak metadanych
-    model_fallback = "BAAI_bge-m3"
 
     # Wczytujemy model z metadata.json, jeśli dostępny
     if os.path.isfile(metadata_path):
         with open(metadata_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        embedding_model_name = data.get("embedding_model", model_fallback)
-    else:
-        embedding_model_name = model_fallback
+        embedding_model_name = data.get("embedding_model")
+
+    model_instance = get_targeted_model_instance(embedding_model_name)
 
     # Ładujemy model z cache
-    embedding_model = load_embedding_model(embedding_model_name)
+    embedding_model = load_embedding_model(model_instance)
 
     # Inicjalizacja bazy Chroma
     chroma_client = chromadb.PersistentClient(path=db_path)

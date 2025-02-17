@@ -10,16 +10,16 @@ from src.enums.database_type import DatabaseType
 from src.models.downloaded_model_info import DownloadedModelInfo
 
 
-def ui_create_database(db_engine: str, db_name, files, chunk_size, chunk_overlap, model_name):
+def ui_create_database(db_engine: str, db_name, files, chunk_size, chunk_overlap, model_instance: DownloadedModelInfo):
     if not files or len(files) == 0:
         return "❌ Nie wybrano żadnego pliku!", gr.update(choices=[])
 
     db_engine_enum = DatabaseType(db_engine)
-
+    print(f'ui_create_database model_instance:name {model_instance.model_name}')
     if db_engine_enum == DatabaseType.CHROMA_DB:
-        result = create_new_database_chroma_db(db_name, files, chunk_size, chunk_overlap, model_name)
+        result = create_new_database_chroma_db(db_name, files, chunk_size, chunk_overlap, model_instance)
     elif db_engine_enum == DatabaseType.LANCE_DB:
-        result = create_new_database_lance_db(db_name, files, chunk_size, chunk_overlap, model_name)
+        result = create_new_database_lance_db(db_name, files, chunk_size, chunk_overlap, model_instance)
 
     db_list = get_databases_with_info(db_engine_enum)
     return result, gr.update(choices=db_list)
@@ -45,7 +45,7 @@ def create_database_tab():
             Przykład (wybrałem z listy GPT-4): ("GPT-4", '{"name": "GPT-4", "folder_name": "gpt4_model"}') -> dropdown do wyświetlania weźmie pierwszy element ("GPT-4") krotki.
             Ale, gdy przekaże jego wartość (model_dropdown) do innej funkcji to zwróci JSON ({"name": "GPT-4", "folder_name": "gpt4_model"}).
         """
-        model_choices = [(model.name, json.dumps(model.to_json())) for model in embedding_models]
+        model_choices = [(model.model_name, json.dumps(model.to_json())) for model in embedding_models]
         # Tworzymy dropdown, ale wartością jest cała instancja
         model_dropdown = gr.Dropdown(
             choices=model_choices,  # 👈 (nazwa, instancja)
@@ -73,9 +73,11 @@ def create_database_tab():
         create_db_output = gr.Textbox(label="Wynik operacji")
 
 
-        def handle_create_db(engine, db_name, files, chunk_size, chunk_overlap, selected_model_name):
-            model_instance = DownloadedModelInfo.from_json(json_data=json_data, folder_name=model_folder.name)
-            return ui_create_database(engine, db_name, files, chunk_size, chunk_overlap, model_instance)
+        def handle_create_db(db_engine_dropdown, db_name_input, file_uploader, chunk_size_slider, chunk_overlap_slider, model_dropdown):
+            model_json = json.loads(model_dropdown)  # 👉 Zamiana stringa JSON na słownik
+            print(f'handle_create_db model_json: {model_json}')
+            model_instance = DownloadedModelInfo.from_json(json_data=model_json)  # 👉 Przekazujemy poprawny format
+            return ui_create_database(db_engine_dropdown, db_name_input, file_uploader, chunk_size_slider,chunk_overlap_slider, model_instance)
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`

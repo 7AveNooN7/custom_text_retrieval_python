@@ -39,7 +39,11 @@ def search_database_tab():
             interactive=False
         )
 
-        search_btn.click(ui_search_database, [search_engine_dropdown, db_dropdown_search, query_input, top_k_slider], [token_output, search_output])
+        search_btn.click(
+            ui_search_database,
+            [search_engine_dropdown, db_dropdown_search, query_input, top_k_slider],
+            [token_output, search_output]
+        )
 
 
 def ui_search_database(db_engine: str, db_name, query, top_k):
