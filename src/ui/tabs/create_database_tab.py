@@ -1,4 +1,5 @@
 import json
+from typing import List
 
 import gradio as gr
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
@@ -8,18 +9,30 @@ from src.lance_db_utils import create_new_database_lance_db
 from src.embedding_model_utils import get_downloaded_models
 from src.enums.database_type import DatabaseType
 from src.models.downloaded_model_info import DownloadedModelInfo
+from src.models.vector_database_info import VectorDatabaseInfo
 
 
-def ui_create_database(db_engine: str, db_name, files, chunk_size, chunk_overlap, model_instance: DownloadedModelInfo):
-    if not files or len(files) == 0:
+def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, files_from_uploader: List, chunk_size_from_slider: int, chunk_overlap_from_slider: int, chosen_model_instance: DownloadedModelInfo):
+    """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
+    if not files_from_uploader or len(files_from_uploader) == 0:
         return "❌ Nie wybrano żadnego pliku!", gr.update(choices=[])
 
-    db_engine_enum = DatabaseType(db_engine)
-    print(f'ui_create_database model_instance:name {model_instance.model_name}')
+    if not db_engine_from_dropdown:
+        return "❌ Nie wybrano embedding model!", gr.update(choices=[])
+    else:
+        db_engine_enum = DatabaseType(db_engine_from_dropdown)
+
+    chosen_vector_database_info_instance = VectorDatabaseInfo(
+        embedding_model_name=db_engine_from_dropdown,
+        chunk_size=chunk_size_from_slider,
+        chunk_overlap=chunk_overlap_from_slider,
+        file_names=[file_obj.name for file_obj in files_from_uploader]
+    )
+
     if db_engine_enum == DatabaseType.CHROMA_DB:
-        result = create_new_database_chroma_db(db_name, files, chunk_size, chunk_overlap, model_instance)
+        result = create_new_database_chroma_db(db_name_from_textbox, chosen_vector_database_info_instance, chosen_model_instance)
     elif db_engine_enum == DatabaseType.LANCE_DB:
-        result = create_new_database_lance_db(db_name, files, chunk_size, chunk_overlap, model_instance)
+        result = create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, chosen_model_instance)
 
     db_list = get_databases_with_info(db_engine_enum)
     return result, gr.update(choices=db_list)
@@ -73,11 +86,10 @@ def create_database_tab():
         create_db_output = gr.Textbox(label="Wynik operacji")
 
 
-        def handle_create_db(db_engine_dropdown, db_name_input, file_uploader, chunk_size_slider, chunk_overlap_slider, model_dropdown):
-            model_json = json.loads(model_dropdown)  # 👉 Zamiana stringa JSON na słownik
-            print(f'handle_create_db model_json: {model_json}')
+        def handle_create_db(db_engine_from_dropdown: str, db_name_from_textbox: str, files_from_uploader: List[gr.File], chunk_size_from_slider, chunk_overlap_from_slider, model_from_dropdown):
+            model_json = json.loads(model_from_dropdown)  # 👉 Zamiana stringa JSON na słownik
             model_instance = DownloadedModelInfo.from_json(json_data=model_json)  # 👉 Przekazujemy poprawny format
-            return ui_create_database(db_engine_dropdown, db_name_input, file_uploader, chunk_size_slider,chunk_overlap_slider, model_instance)
+            return ui_create_database(db_engine_from_dropdown, db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_instance)
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`

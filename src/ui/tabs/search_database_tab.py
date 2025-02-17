@@ -9,7 +9,7 @@ def search_database_tab():
         search_engine_dropdown = gr.Dropdown(
             choices=[db.value for db in DatabaseType],
             value=None,
-            label="Wybierz silnik wektorowy"
+            label="Wybierz silnik bazy wektorowej"
         )
         db_dropdown_search = gr.Dropdown(
             choices=[],
