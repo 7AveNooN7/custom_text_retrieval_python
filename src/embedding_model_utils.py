@@ -43,12 +43,12 @@ def get_targeted_model_instance(model_name: str) -> DownloadedModelInfo:
     raise FileNotFoundError(f"❌ Model '{model_name}' nie został znaleziony w {MODEL_FOLDER}")
 
 
-def load_embedding_model(model_instance: DownloadedModelInfo):
+def load_embedding_model(model_instance: str):
     """
     Ładuje model Sentence Transformers, szukając folderu, w którym
     wartość "model_name" w metadata.json pasuje do model_instance.name.
     """
-    target_model_name = model_instance.model_name
+    target_model_name = model_instance
     print(f'model_name: {target_model_name}')
     selected_model_path = None
 

@@ -1,0 +1,86 @@
+from enum import Enum
+from typing import Type, List
+
+from src.config import CHROMA_DB_FOLDER, LANCE_DB_FOLDER
+from src.enums.embedding_type_enum import EmbeddingType
+from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo
+
+# class DatabaseType(Enum):
+#     CHROMA_DB = ("ChromaDB", ChromaVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 1)
+#     LANCE_DB = ("LanceDB", LanceVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 3)
+#
+#     def __init__(self, display_name: str, db_class: Type["VectorDatabaseInfo"], supported_embeddings: List[EmbeddingType], simultaneous_embeddings: int):
+#         self._display_name = display_name
+#         self._db_class = db_class  # ZACHOWUJEMY ODNIESIENIE DO KLASY
+#         self._supported_embeddings = supported_embeddings
+#         self._simultaneous_embeddings = simultaneous_embeddings
+#
+#     @property
+#     def display_name(self) -> str:
+#         return self._display_name  # Nazwa bazy np. "ChromaDB"
+#
+#     @property
+#     def db_class(self) -> Type["VectorDatabaseInfo"]:
+#         return self._db_class  # Możesz dalej używać tej klasy, np. do inicjalizacji
+#
+#     @property
+#     def supported_embeddings(self) -> List[EmbeddingType]:
+#         return self._supported_embeddings  # Lista obsługiwanych typów embeddingów
+#
+#     @property
+#     def simultaneous_embeddings(self) -> int:
+#         return self._simultaneous_embeddings  # Maksymalna liczba jednoczesnych embeddingów
+#
+#     def __str__(self):
+#         return self.display_name  # `str(DatabaseType.CHROMA_DB)` zwróci `"ChromaDB"`
+#
+#     @classmethod
+#     def from_display_name(cls, display_name: str):
+#         """Konwersja stringa na DatabaseType"""
+#         for db in cls:
+#             if db.display_name == display_name:
+#                 return db
+#         raise ValueError(f"Niepoprawna wartość: {display_name}")
+
+class DatabaseType(Enum):
+    CHROMA_DB = ("ChromaDB", ChromaVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 1, CHROMA_DB_FOLDER)
+    LANCE_DB = ("LanceDB", LanceVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 3, LANCE_DB_FOLDER)
+
+    def __init__(self, display_name: str, db_class: Type["VectorDatabaseInfo"], supported_embeddings: List[EmbeddingType], simultaneous_embeddings: int, db_folder: str):
+        self._display_name = display_name
+        self._db_class = db_class
+        self._supported_embeddings = supported_embeddings
+        self._simultaneous_embeddings = simultaneous_embeddings
+        self._db_folder = db_folder
+
+    @property
+    def display_name(self) -> str:
+        return self._display_name
+
+    @property
+    def db_class(self) -> Type["VectorDatabaseInfo"]:
+        return self._db_class
+
+    @property
+    def supported_embeddings(self) -> List[EmbeddingType]:
+        return self._supported_embeddings
+
+    @property
+    def simultaneous_embeddings(self) -> int:
+        return self._simultaneous_embeddings
+
+    @property
+    def db_folder(self) -> str:
+        """Zwraca ścieżkę do folderu bazy danych."""
+        return self._db_folder
+
+    def __str__(self):
+        return self.display_name
+
+    @classmethod
+    def from_display_name(cls, display_name: str):
+        """Konwersja stringa na DatabaseType"""
+        for db in cls:
+            if db.display_name == display_name:
+                return db
+        raise ValueError(f"Niepoprawna wartość: {display_name}")

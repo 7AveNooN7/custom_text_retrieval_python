@@ -1,5 +1,5 @@
 from typing import List
-from src.enums.embedding_type import EmbeddingType
+from src.enums.embedding_type_enum import EmbeddingType
 
 class DownloadedModelInfo:
     """Reprezentuje pobrany model z katalogu."""

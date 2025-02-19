@@ -2,7 +2,7 @@ import gradio as gr
 import json
 import os
 from src.embedding_model_utils import get_downloaded_models, download_modem_from_hf
-from src.enums.embedding_type import EmbeddingType
+from src.enums.embedding_type_enum import EmbeddingType
 
 def add_model_tab(model_dropdown):
     with gr.Tab("🆕 Dodawanie modelu"):

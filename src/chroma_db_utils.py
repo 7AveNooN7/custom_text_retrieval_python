@@ -6,10 +6,10 @@ from src.db_utils import generate_id, is_valid_db_name, split_text_into_chunks
 from src.config import CHROMA_DB_FOLDER
 from src.embedding_model_utils import load_embedding_model, get_targeted_model_instance
 from src.models.downloaded_model_info import DownloadedModelInfo
-from src.models.vector_database_info import VectorDatabaseInfo
+from src.models.vector_database_info import VectorDatabaseInfo, ChromaVectorDatabase
 
 
-def create_new_database_chroma_db(db_name_from_textbox: str, chosen_vector_database_info_instance: VectorDatabaseInfo, chosen_model_instance: DownloadedModelInfo):
+def create_new_database_chroma_db(chosen_vector_database_info_instance: ChromaVectorDatabase):
     """
     Tworzy nową bazę wektorową Chroma:
       - Waliduje nazwę bazy
@@ -18,27 +18,24 @@ def create_new_database_chroma_db(db_name_from_textbox: str, chosen_vector_datab
       - Dodaje dokumenty do bazy
       - Zapisuje metadane w 'metadata.json'
     """
-    # Walidacja nazwy bazy
-    if not is_valid_db_name(chosen_vector_database_info_instance.embedding_model_name):
-        return "❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki."
 
     # Wczytanie wybranego modelu embeddingowego (z cache)
-    embedding_model = load_embedding_model(chosen_model_instance)
+    embedding_model = load_embedding_model(chosen_vector_database_info_instance.embedding_model_name)
 
     # Inicjalizacja (lub otwarcie) bazy wektorowej Chroma
-    db_path = os.path.join(CHROMA_DB_FOLDER, chosen_vector_database_info_instance.embedding_model_name)
+    db_path = os.path.join(CHROMA_DB_FOLDER, chosen_vector_database_info_instance.database_name)
     chroma_client = chromadb.PersistentClient(path=db_path)
     collection = chroma_client.get_or_create_collection(
-        name=db_name_from_textbox,
-        metadata=chosen_vector_database_info_instance.metadata_to_dict()
+        name=chosen_vector_database_info_instance.database_name,
+        metadata=chosen_vector_database_info_instance.create_metadata_specific_for_database()
     )
 
     texts, metadata, ids = [], [], []
 
     # Iterujemy po wybranych plikach
-    for file_obj in chosen_vector_database_info_instance.file_names:
+    for file_path in chosen_vector_database_info_instance.files_paths:
         # file_obj.name to pełna ścieżka tymczasowa, może być różna w Gradio
-        with open(file_obj.name, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
 
         try:
@@ -49,11 +46,11 @@ def create_new_database_chroma_db(db_name_from_textbox: str, chosen_vector_datab
         for idx, chunk in enumerate(chunks):
             texts.append(chunk)
             metadata.append({
-                "source": os.path.basename(file_obj.name),
+                "source": os.path.basename(file_path),
                 "fragment_id": idx,
-                "embedding_model": chosen_model_instance.model_name,
+                "embedding_model": chosen_vector_database_info_instance.embedding_model_name,
             })
-            ids.append(generate_id(chunk, file_obj.name, idx))
+            ids.append(generate_id(chunk, file_path, idx))
 
     # Dodawanie do kolekcji
     if texts:
@@ -67,7 +64,7 @@ def create_new_database_chroma_db(db_name_from_textbox: str, chosen_vector_datab
             )
 
 
-    return f"✅ Nowa baza `{db_name_from_textbox}` została utworzona z użyciem modelu `{chosen_model_instance.model_name}`!"
+    return f"✅ Nowa baza `{chosen_vector_database_info_instance.database_name}` została utworzona z użyciem modelu `{chosen_vector_database_info_instance.embedding_model_name}`!"
 
 
 def retrieve_text_from_chroma_db(db_name: str, query: str, top_k: int) -> str:
