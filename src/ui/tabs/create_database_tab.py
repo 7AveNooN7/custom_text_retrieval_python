@@ -110,7 +110,7 @@ def create_database_tab():
         def update_embedding_choices(db_display_name):
             if db_display_name:
                 db_type = DatabaseType.from_display_name(db_display_name)
-                choices = [et.value for et in db_type.supported_embeddings]
+                choices = [et.value for et in db_type.storage_supported_embeddings]
                 label = f"Wybierz jakie typy embeddingów utworzyć i zapisać w bazie (max: {db_type.simultaneous_embeddings})"
                 # Tworzenie CheckboxGroup z aktualnymi opcjami
                 checkbox_group = gr.CheckboxGroup(

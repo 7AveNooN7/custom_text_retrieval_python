@@ -1,9 +1,11 @@
 import os
 import shutil
 import json
+import numpy as np
 from typing import List
 
 from sentence_transformers import SentenceTransformer
+from FlagEmbedding import FlagModel, BGEM3FlagModel
 from src.config import MODEL_FOLDER
 from src.models.downloaded_model_info import DownloadedModelInfo
 
@@ -87,8 +89,23 @@ def load_embedding_model(model_instance: str):
         trust_remote_code=True
     )
 
+def is_sentence_transformer_model(model_dir: str) -> bool:
+    """
+    Sprawdza, czy model jest kompatybilny z Sentence-Transformers.
+    """
+    try:
+        # Próba załadowania modelu jako SentenceTransformer
+        model = SentenceTransformer(model_dir)
+        # Test kodowania przykładowego tekstu
+        test_embedding = model.encode("To jest test.")
+        print(f"Model działa poprawnie. Wymiar wektora: {len(test_embedding)}")
+        return True
+    except Exception as e:
+        print(f"Model nie jest kompatybilny z Sentence-Transformers: {e}")
+        return False
 
-def download_modem_from_hf(model_name: str, selected_embedding_types: list):
+
+def download_model_from_hf(model_name: str):
     """
     Pobiera model z Hugging Face do lokalnego cache (MODEL_FOLDER) i zapisuje metadata.json.
     """
@@ -107,14 +124,7 @@ def download_modem_from_hf(model_name: str, selected_embedding_types: list):
         local_dir_use_symlinks=False
     )
 
-    # Tworzymy plik metadata.json w folderze modelu
-    metadata = {
-        "model_name": model_name,
-        "embedding_types": selected_embedding_types  # Lista wybranych typów embeddingów
-    }
+    is_sentence_transformer_model(target_dir)
 
-    metadata_path = os.path.join(target_dir, "metadata.json")
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2, ensure_ascii=False)
 
     return target_dir

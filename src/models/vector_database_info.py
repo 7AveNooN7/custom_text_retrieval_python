@@ -14,6 +14,8 @@ class VectorDatabaseInfo:
         self.files_paths = files_paths
         self.embedding_types=embedding_types
 
+    string_separator = '|'
+
     def to_dict(self) -> Dict:
         """Konwertuje obiekt do słownika (dict) i zamienia Enum na stringi dla JSON."""
         return {
@@ -57,10 +59,14 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
     # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
     def create_metadata_specific_for_database(self) -> dict:
-        metadata_dict = self.to_dict()
-        metadata_dict["files_paths"] = ", ".join(metadata_dict["files_paths"])
-        metadata_dict["embedding_types"] = ", ".join(et.value for et in metadata_dict["embedding_types"])
-        return metadata_dict
+        return {
+            "database_name": self.database_name,
+            "embedding_model_name": self.embedding_model_name,
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "files_paths": self.string_separator.join(self.files_paths),
+            "embedding_types": self.string_separator.join(et.value for et in self.embedding_types)  # Enum -> string
+        }
 
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> dict:
@@ -74,6 +80,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             try:
                 collection = chroma_client.get_or_create_collection(name=db_folder_name)
                 metadata = collection.metadata or {}
+                # TU JEST PROBLEM
                 chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
                 database_name = chroma_vector_instance.database_name
                 saved_databases[database_name] = chroma_vector_instance
@@ -84,13 +91,14 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
     @classmethod
     def from_specific_database_metadata(cls, *, metadata: Dict):
+        print(f'tu blad: {metadata.get("embedding_types", "N/A")}')
         return cls(
             database_name=metadata.get("database_name", "N/A"),
             embedding_model_name=metadata.get("embedding_model_name", "N/A"),
             chunk_size=metadata.get("chunk_size", 0),
             chunk_overlap=metadata.get("chunk_overlap", 0),
-            files_paths=metadata.get("files_paths", "N/A").split(', '),
-            embedding_types=[EmbeddingType(et.strip()) for et in metadata.get("embedding_types", "N/A").split(", ") if et],
+            files_paths=metadata.get("files_paths", "N/A").split(cls.string_separator),
+            embedding_types=[EmbeddingType(et.strip()) for et in metadata.get("embedding_types", "N/A").split(cls.string_separator) if et],
         )
 
 

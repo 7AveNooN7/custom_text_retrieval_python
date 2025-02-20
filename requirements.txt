@@ -13,3 +13,6 @@ huggingface-hub
 numpy
 pandas
 pyarrow
+sympy
+markdown-it-py
+FlagEmbedding

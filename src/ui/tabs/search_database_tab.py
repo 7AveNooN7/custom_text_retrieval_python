@@ -57,15 +57,15 @@ def search_database_tab():
 
 def ui_search_database(metadata_dict: dict, database_type_dropdown: str, query: str, top_k: int):
     print('CHUJNIA')
-    #database_type = DatabaseType.from_display_name(database_type_dropdown)
+    database_type = DatabaseType.from_display_name(database_type_dropdown)
     #database_type.db_class.to_dict(metadata_dict)
     print(f'chuj: {metadata_dict}')
     # db_engine_enum = DatabaseType(db_engine)
     #
-    # if db_engine_enum == DatabaseType.CHROMA_DB:
-    #     retrieved_text = retrieve_text_from_chroma_db(db_name, query, top_k)
-    # elif db_engine_enum == DatabaseType.LANCE_DB:
-    #     retrieved_text = retrieve_text_from_lance_db(db_name, query, top_k)
+    if db_engine_enum == DatabaseType.CHROMA_DB:
+        retrieved_text = retrieve_text_from_chroma_db(db_name, query, top_k)
+    elif db_engine_enum == DatabaseType.LANCE_DB:
+        retrieved_text = retrieve_text_from_lance_db(db_name, query, top_k)
     #
     # token_count = count_tokens(retrieved_text)
     # return token_count, retrieved_text
