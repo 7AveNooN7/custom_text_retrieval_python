@@ -1,8 +1,12 @@
 import gradio as gr
 import json
 import os
+
+from src.config import MODEL_FOLDER
 from src.embedding_model_utils import get_downloaded_models, download_model_from_hf
 from src.enums.embedding_type_enum import EmbeddingType
+from src.enums.transformer_library_enum import TransformerLibrary
+
 
 def add_model_tab(model_dropdown):
     with gr.Tab("🆕 Dodawanie modelu"):
@@ -31,7 +35,12 @@ def add_model_tab(model_dropdown):
 
 def ui_add_model(model_name):
     try:
-        target_dir = download_model_from_hf(model_name)
+        safe_model_dir: str = str(model_name.replace("/", "_"))
+        target_dir: str = str(os.path.join(MODEL_FOLDER, safe_model_dir))
+        download_model_from_hf(model_name, target_dir)
+
+        TransformerLibrary.is_sentence_transformer_model(target_dir, model_name)
+        TransformerLibrary.is_flag_embedding_model(target_dir, model_name)
 
         # Tworzymy plik metadata.json w folderze modelu
         metadata = {

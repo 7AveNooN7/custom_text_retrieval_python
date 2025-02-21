@@ -91,12 +91,10 @@ def load_embedding_model(model_instance: str):
     )
 
 
-def download_model_from_hf(model_name: str):
+def download_model_from_hf(model_name: str, target_dir: str):
     """
     Pobiera model z Hugging Face do lokalnego cache (MODEL_FOLDER) i zapisuje metadata.json.
     """
-    safe_model_dir = model_name.replace("_", "|")
-    target_dir = os.path.join(MODEL_FOLDER, safe_model_dir)
 
     # Jeśli folder już istnieje, usuwamy go
     if os.path.exists(target_dir):
@@ -112,9 +110,6 @@ def download_model_from_hf(model_name: str):
         repo_id=model_name,
         local_dir=target_dir
     )
-
-    TransformerLibrary.is_sentence_transformer_model(target_dir)
-    TransformerLibrary.is_flag_embedding_model(target_dir)
 
 
     return target_dir
