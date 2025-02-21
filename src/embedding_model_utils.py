@@ -7,6 +7,7 @@ from typing import List
 from sentence_transformers import SentenceTransformer
 from FlagEmbedding import FlagModel, BGEM3FlagModel
 from src.config import MODEL_FOLDER
+from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.downloaded_model_info import DownloadedModelInfo
 
 
@@ -89,42 +90,31 @@ def load_embedding_model(model_instance: str):
         trust_remote_code=True
     )
 
-def is_sentence_transformer_model(model_dir: str) -> bool:
-    """
-    Sprawdza, czy model jest kompatybilny z Sentence-Transformers.
-    """
-    try:
-        # Próba załadowania modelu jako SentenceTransformer
-        model = SentenceTransformer(model_dir)
-        # Test kodowania przykładowego tekstu
-        test_embedding = model.encode("To jest test.")
-        print(f"Model działa poprawnie. Wymiar wektora: {len(test_embedding)}")
-        return True
-    except Exception as e:
-        print(f"Model nie jest kompatybilny z Sentence-Transformers: {e}")
-        return False
-
 
 def download_model_from_hf(model_name: str):
     """
     Pobiera model z Hugging Face do lokalnego cache (MODEL_FOLDER) i zapisuje metadata.json.
     """
-    safe_model_dir = model_name.replace("/", "_")
+    safe_model_dir = model_name.replace("_", "|")
     target_dir = os.path.join(MODEL_FOLDER, safe_model_dir)
 
     # Jeśli folder już istnieje, usuwamy go
     if os.path.exists(target_dir):
         shutil.rmtree(target_dir)
 
-    # Pobieramy model
     from huggingface_hub import snapshot_download
     snapshot_download(
-        repo_id=model_name,
-        local_dir=target_dir,
-        local_dir_use_symlinks=False
+        repo_id=model_name
     )
 
-    is_sentence_transformer_model(target_dir)
+    # Pobieramy model
+    snapshot_download(
+        repo_id=model_name,
+        local_dir=target_dir
+    )
+
+    TransformerLibrary.is_sentence_transformer_model(target_dir)
+    TransformerLibrary.is_flag_embedding_model(target_dir)
 
 
     return target_dir

@@ -2,7 +2,6 @@ import json
 from typing import List, Literal
 
 import gradio as gr
-from sympy import false
 
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.db_utils import get_databases_with_info, is_valid_db_name
