@@ -16,20 +16,28 @@ class TransformerLibrary(Enum):
     FlagEmbedding = ("FlagEmbedding", [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT])
     SentenceTransformers = ("SentenceTransformers", [EmbeddingType.DENSE])
 
-    def __init__(self, value, supported_embeddings: List[EmbeddingType]):
-        self._value_ = value
+    def __init__(self, display_name, supported_embeddings: List[EmbeddingType]):
+        self.display_name = display_name
         self.supported_embeddings = supported_embeddings
 
+    @classmethod
+    def from_display_name(cls, display_name: str):
+        """Konwersja stringa na DatabaseType"""
+        for db in cls:
+            if db.display_name == display_name:
+                return db
+        raise ValueError(f"Niepoprawna wartość: {display_name}")
+
     @staticmethod
-    def list():
+    def list() -> List[str]:
         """Zwraca listę wszystkich wartości enuma"""
-        return [e.value for e in TransformerLibrary]
+        return [e.display_name for e in TransformerLibrary]
 
     @staticmethod
     def is_sentence_transformer_model(target_dir: str, model_name: str) -> dict:
         print('⚙️ SentenceTransformers library Test')
         basic_dict = {
-            TransformerLibrary.SentenceTransformers.value: []
+            TransformerLibrary.SentenceTransformers.display_name: []
         }
         # Przykładowe zdania do testu
         question = ["Where is number one"]
@@ -67,7 +75,7 @@ class TransformerLibrary(Enum):
 
             if torch.equal(results[0], results[1]):
                 print("✅ Model obsługuj SentenceTransformers.")
-                basic_dict[TransformerLibrary.SentenceTransformers.value].append(EmbeddingType.DENSE.value)
+                basic_dict[TransformerLibrary.SentenceTransformers.display_name].append(EmbeddingType.DENSE.value)
                 return basic_dict
             else:
                 print("❌ Model nie obsługuje SentenceTransformers - błędne wyniki.")
@@ -90,7 +98,7 @@ class TransformerLibrary(Enum):
         """
         print('⚙️ FlagEmbedding Library Test')
         basic_dict = {
-            TransformerLibrary.FlagEmbedding.value: []
+            TransformerLibrary.FlagEmbedding.display_name: []
         }
         # Inicjujemy słownik wyników dla każdego typu embeddings
         results = {
@@ -319,7 +327,7 @@ class TransformerLibrary(Enum):
             for emb_type in EmbeddingType:
                 if results[emb_type]:
                     print(f"✅ Model obsługuje: {emb_type.value}")
-                    basic_dict[TransformerLibrary.FlagEmbedding.value].append(emb_type.value)
+                    basic_dict[TransformerLibrary.FlagEmbedding.display_name].append(emb_type.value)
                 else:
                     print(f"❌ Model nie obsługuje: {emb_type.value}")
 

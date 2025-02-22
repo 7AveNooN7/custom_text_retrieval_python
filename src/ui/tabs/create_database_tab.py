@@ -1,5 +1,5 @@
 import json
-from typing import List, Literal
+from typing import List, Literal, Tuple
 
 import gradio as gr
 
@@ -7,8 +7,9 @@ from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.db_utils import get_databases_with_info, is_valid_db_name
 from src.chroma_db_utils import create_new_database_chroma_db
 from src.enums.embedding_type_enum import EmbeddingType
+from src.enums.transformer_library_enum import TransformerLibrary
 from src.lance_db_utils import create_new_database_lance_db
-from src.embedding_model_utils import get_downloaded_models
+from src.embedding_model_utils import get_downloaded_models_for_dropdown
 from src.enums.database_type_enum import DatabaseType
 from src.models.downloaded_model_info import DownloadedModelInfo
 
@@ -54,8 +55,6 @@ def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, 
         gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
         return None
 
-    print(f'files: {files_from_uploader}')
-
     if db_engine_enum == DatabaseType.CHROMA_DB:
         create_new_database_chroma_db(chosen_vector_database_info_instance)
     elif db_engine_enum == DatabaseType.LANCE_DB:
@@ -64,60 +63,138 @@ def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, 
 
 def create_database_tab():
     with gr.Tab("📂 Tworzenie nowej bazy"):
-        db_engine_dropdown = gr.Dropdown(
-            choices=[db.display_name for db in DatabaseType],
-            value=None,
-            label="Wybierz bazę wektorową"
-        )
 
+        ###################### DATABASE DROPDOWN ######################
+        selected_database_engine_state = gr.State()
+        def change_selected_database_engine_state(db_engine: str):
+            return db_engine
+        @gr.render(inputs=[])
+        def create_database_engine_dropdown():
+            db_engine_dropdown = gr.Dropdown(
+                choices=[db.display_name for db in DatabaseType],
+                value=None,
+                label="Wybierz bazę wektorową"
+            )
+
+            db_engine_dropdown.change(
+                change_selected_library_state,
+                [gr.State(None)],
+                [selected_library_state]
+            )
+
+            db_engine_dropdown.change(
+                change_selected_database_engine_state,
+                [db_engine_dropdown],
+                [selected_database_engine_state]
+            )
+
+
+
+        ###################### TEXTBOX ######################
         db_name_input = gr.Textbox(label="🆕 Nazwa nowej bazy")
 
+        ###################### FILE UPLOADER ######################
         file_uploader = gr.Files(
             scale=50,
             label="📤 Wybierz pliki `.txt` do przesłania:",
             file_types=[".txt"]
         )
 
-        embedding_models = get_downloaded_models()
-        """
-            1. embedding_models to lista instancji DownloadedModelInfo, funkcja get_downloaded_models() jest wywoływana przy starcie aplikacji
-            2. Gradio Dropdown obsługuje tuple w taki sposób, że pokazuje tylko pierwszy element krotki.
-            Przykład (wybrałem z listy GPT-4): ("GPT-4", '{"name": "GPT-4", "folder_name": "gpt4_model"}') -> dropdown do wyświetlania weźmie pierwszy element ("GPT-4") krotki.
-            Ale, gdy przekaże jego wartość (model_dropdown) do innej funkcji to zwróci JSON ({"name": "GPT-4", "folder_name": "gpt4_model"}).
-        """
-        model_choices = [(model.model_name, json.dumps(model.to_json())) for model in embedding_models]
-        # Tworzymy dropdown, ale wartością jest cała instancja
-        model_dropdown = gr.Dropdown(
-            choices=model_choices,  # 👈 (nazwa, instancja)
-            value=model_choices[0][1] if model_choices else None,  # Domyślna wartość: instancja
-            label="🧠 Model embeddingowy"
-        )
-
-        selected_choices = gr.State([])
-
-        def update_selected_choices(choices: List[str], max_choices: int):
-            # print(f'choices: {choices}, max_choices: {max_choices}, len(choices): {len(choices)}')
-            # if len(choices) > max_choices:
-            #     print('popped')
-            #     choices.pop(0)
-            #     print(f'choices: {choices}')
-            return choices
+        ###################### MODEL DROPDOWN ######################
+        model_dropdown_choices_state = gr.State(get_downloaded_models_for_dropdown())
+        model_dropdown_current_choice_state = gr.State()
+        def update_model_dropdown_current_choice(model_dropdown_current_choice_arg: str) -> str:
+            return model_dropdown_current_choice_arg
 
 
-        # Główna funkcja renderująca
-        @gr.render(inputs=[db_engine_dropdown])
-        def update_embedding_choices(db_display_name):
-            if db_display_name:
-                db_type = DatabaseType.from_display_name(db_display_name)
-                choices = [et.value for et in db_type.storage_supported_embeddings]
+        @gr.render(inputs=[model_dropdown_choices_state])
+        def update_models_dropdown(model_dropdown_choices: List[Tuple[str, str]]):
+            """
+                1. embedding_models to lista instancji DownloadedModelInfo, funkcja get_downloaded_models() jest wywoływana przy starcie aplikacji
+                2. Gradio Dropdown obsługuje tuple w taki sposób, że pokazuje tylko pierwszy element krotki.
+                Przykład (wybrałem z listy GPT-4): ("GPT-4", '{"name": "GPT-4", "folder_name": "gpt4_model"}') -> dropdown do wyświetlania weźmie pierwszy element ("GPT-4") krotki.
+                Ale, gdy przekaże jego wartość (model_dropdown) do innej funkcji to zwróci JSON ({"name": "GPT-4", "folder_name": "gpt4_model"}).
+            """
+
+            model_dropdown = gr.Dropdown(
+                choices=model_dropdown_choices,  # Tuple (model_label, json)
+                value=None,
+                label="🧠 Model embeddingowy",
+                interactive=True,
+                key='model_dropdown_choices'
+            )
+
+            model_dropdown.change(
+                update_model_dropdown_current_choice,
+                [model_dropdown],
+                [model_dropdown_current_choice_state]
+            )
+
+            # PRZY ZMIANIE MODELU ZERUJE LIBRARY_STATE
+            model_dropdown.change(
+                change_selected_library_state,
+                [gr.State(None)],
+                [selected_library_state]
+            )
+
+        ###################### RADIO BUTTONS ######################
+        selected_library_state = gr.State()
+        def change_selected_library_state(selected_library_state_arg):
+            if selected_library_state_arg:
+                return selected_library_state_arg
+            else:
+                return None
+
+
+        @gr.render(inputs=[model_dropdown_current_choice_state, selected_database_engine_state])
+        def generate_library_checkboxes(model_dropdown_current_choice: str, selected_database_engine_state: str):
+            if model_dropdown_current_choice:
+                model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_dropdown_current_choice))
+                radio = gr.Radio(
+                    label='Wybierz bibliotekę do utworzenia embeddingów',
+                    choices=[supported_library.display_name for supported_library, _ in
+                             model_instance.supported_libraries.items()],
+                    value=None
+                )
+                radio.change(
+                    change_selected_library_state,
+                    [radio],
+                    [selected_library_state]
+                )
+
+                radio.change(
+                    update_selected_choices,
+                    [gr.State(None), gr.Number(value=0, visible=False)],
+                    [selected_embeddings_state]
+                )
+
+
+        ###################### CHECKBOXES EMBEDDINGS ######################
+        selected_embeddings_state = gr.State([])
+        def update_selected_choices(choices: any, max_choices: int):
+            if choices:
+                if len(choices) > max_choices:
+                    choices.pop(0)
+                return choices
+            else:
+                return []
+
+        @gr.render(inputs=[selected_database_engine_state, selected_embeddings_state, selected_library_state, model_dropdown_current_choice_state])
+        def update_embedding_choices(db_engine_json: str, selected_embeddings: List[str], selected_library: str, model_instance_info: str):
+            if db_engine_json and db_engine_json in [db.display_name for db in DatabaseType] and selected_library and model_dropdown_current_choice_state:
+                db_type = DatabaseType.from_display_name(db_engine_json)
+                embedding_choices_database = [et.value for et in db_type.storage_supported_embeddings]
+                model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_instance_info))
+                model_info_supported_embeddings: List[EmbeddingType] = model_instance.get_supported_embeddings_from_specific_library(TransformerLibrary.from_display_name(selected_library))
+                embedding_choices_model_info = [embedding.value for embedding in model_info_supported_embeddings]
+                choices = list(set(embedding_choices_database) & set(embedding_choices_model_info))
                 label = f"Wybierz jakie typy embeddingów utworzyć i zapisać w bazie (max: {db_type.simultaneous_embeddings})"
                 # Tworzenie CheckboxGroup z aktualnymi opcjami
                 checkbox_group = gr.CheckboxGroup(
                     choices=choices,
                     label=label,
-                    #value=a,
+                    value=selected_embeddings,
                     interactive=True,
-                    key="embedding_choices"  # Unikalny klucz dla komponentu
                 )
 
                 max_choices_input = gr.Number(value=db_type.simultaneous_embeddings, visible=False)
@@ -125,10 +202,10 @@ def create_database_tab():
                 checkbox_group.change(
                     update_selected_choices,
                     inputs=[checkbox_group, max_choices_input],
-                    outputs=selected_choices
+                    outputs=selected_embeddings_state
                 )
 
-
+        ###################### SLIDERS ######################
         chunk_size_slider = gr.Slider(
             1,
             1000000,
@@ -145,24 +222,25 @@ def create_database_tab():
 
         create_db_btn = gr.Button("🛠️ Utwórz bazę")
 
-        def handle_create_db(db_engine_from_dropdown: str, db_name_from_textbox: str, selected_choices_from_checkbox_group: List[str], files_from_uploader: List[str], chunk_size_from_slider: int, chunk_overlap_from_slider: int, model_from_dropdown: str):
-            print(f'selected_choices_from_checkbox_group: {selected_choices_from_checkbox_group}')
-            model_json = json.loads(model_from_dropdown)  # 👉 Zamiana stringa JSON na słownik
-            model_instance = DownloadedModelInfo.from_json(json_data=model_json)  # 👉 Przekazujemy poprawny format
-            return ui_create_database(db_engine_from_dropdown, db_name_from_textbox, selected_choices_from_checkbox_group, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_instance)
+        def handle_create_db(db_engine_from_dropdown: str, db_name_from_textbox: str, selected_choices_from_checkbox_group: List[str], files_from_uploader: List[str], chunk_size_from_slider: int, chunk_overlap_from_slider: int, model_from_dropdown: str, selected_library):
+            print(f'selected_library: {selected_library}')
+            # model_json = json.loads(model_from_dropdown)  # 👉 Zamiana stringa JSON na słownik
+            # model_instance = DownloadedModelInfo.from_dict(json_data=model_json)  # 👉 Przekazujemy poprawny format
+            # return ui_create_database(db_engine_from_dropdown, db_name_from_textbox, selected_choices_from_checkbox_group, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_instance)
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`
             [
-                db_engine_dropdown,
+                selected_database_engine_state,
                 db_name_input,
-                selected_choices,
+                selected_embeddings_state,
                 file_uploader,
                 chunk_size_slider,
                 chunk_overlap_slider,
-                model_dropdown  # 👈 To zwraca `str`, ale zamienimy go na instancję
+                model_dropdown_choices_state,  # 👈 To zwraca `str`, ale zamienimy go na instancję
+                selected_library_state
             ],
             []
         )
 
-    return model_dropdown
+    return model_dropdown_choices_state
