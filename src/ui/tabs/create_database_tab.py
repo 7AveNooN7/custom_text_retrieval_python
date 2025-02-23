@@ -14,11 +14,24 @@ from src.enums.database_type_enum import DatabaseType
 from src.models.downloaded_model_info import DownloadedModelInfo
 
 
-def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, selected_choices_from_checkbox_group: List[str], files_from_uploader: List[str], chunk_size_from_slider: int, chunk_overlap_from_slider: int, chosen_model_instance: DownloadedModelInfo):
+def ui_create_database(
+        db_engine_from_dropdown: str,
+        db_name_from_textbox: str,
+        selected_embeddings: List[str],
+        files_from_uploader: List[str],
+        chunk_size_from_slider: int,
+        chunk_overlap_from_slider: int,
+        model_json: str,
+        selected_library: str
+):
     """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
     # Walidacja nazwy bazy
     any_error = False
-
+    if not db_engine_from_dropdown:
+        gr.Warning(f"❌ Nie wybrano silnika bazy danych!")
+        any_error = True
+    else:
+        db_engine_enum = DatabaseType.from_display_name(db_engine_from_dropdown)
 
     if not db_name_from_textbox:
         gr.Warning(f"❌ Nie podano nazwy bazy danych!")
@@ -32,22 +45,29 @@ def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, 
         gr.Warning(f"❌ Nie wybrano żadnego pliku do utworzenia bazy danych!")
         any_error = True
 
-    if not db_engine_from_dropdown:
+
+    if not model_json:
         gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
     else:
-        db_engine_enum = DatabaseType.from_display_name(db_engine_from_dropdown)
+        model_instance = DownloadedModelInfo.from_dict(json_data=json.load(model_json))
+
+
+    if not selected_library:
+        gr.Warning(f"❌ Nie wyrabo żadnego typu embeddingów!")
+        any_error = True
+
 
     if any_error:
         return None
 
     chosen_vector_database_info_instance = db_engine_enum.db_class(
         database_name=db_name_from_textbox,
-        embedding_model_name=chosen_model_instance.model_name,
+        embedding_model_name=model_instance.model_name,
         chunk_size=chunk_size_from_slider,
         chunk_overlap=chunk_overlap_from_slider,
         files_paths=files_from_uploader,
-        embedding_types=[EmbeddingType(choice) for choice in selected_choices_from_checkbox_group]
+        embedding_types=[EmbeddingType(choice) for choice in selected_embeddings]
     )
 
     max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
@@ -58,7 +78,7 @@ def ui_create_database(db_engine_from_dropdown: str, db_name_from_textbox: str, 
     if db_engine_enum == DatabaseType.CHROMA_DB:
         create_new_database_chroma_db(chosen_vector_database_info_instance)
     elif db_engine_enum == DatabaseType.LANCE_DB:
-        create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, chosen_model_instance)
+        create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json)
 
 
 def create_database_tab():
@@ -102,7 +122,7 @@ def create_database_tab():
 
         ###################### MODEL DROPDOWN ######################
         model_dropdown_choices_state = gr.State(get_downloaded_models_for_dropdown())
-        model_dropdown_current_choice_state = gr.State()
+        model_dropdown_current_choice_state = gr.State(None)
         def update_model_dropdown_current_choice(model_dropdown_current_choice_arg: str) -> str:
             return model_dropdown_current_choice_arg
 
@@ -120,8 +140,6 @@ def create_database_tab():
                 choices=model_dropdown_choices,  # Tuple (model_label, json)
                 value=None,
                 label="🧠 Model embeddingowy",
-                interactive=True,
-                key='model_dropdown_choices'
             )
 
             model_dropdown.change(
@@ -222,11 +240,17 @@ def create_database_tab():
 
         create_db_btn = gr.Button("🛠️ Utwórz bazę")
 
-        def handle_create_db(db_engine_from_dropdown: str, db_name_from_textbox: str, selected_choices_from_checkbox_group: List[str], files_from_uploader: List[str], chunk_size_from_slider: int, chunk_overlap_from_slider: int, model_from_dropdown: str, selected_library):
-            print(f'selected_library: {selected_library}')
-            # model_json = json.loads(model_from_dropdown)  # 👉 Zamiana stringa JSON na słownik
-            # model_instance = DownloadedModelInfo.from_dict(json_data=model_json)  # 👉 Przekazujemy poprawny format
-            # return ui_create_database(db_engine_from_dropdown, db_name_from_textbox, selected_choices_from_checkbox_group, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_instance)
+        def handle_create_db(
+                database_type_name: str,
+                database_name_from_textbox: str,
+                selected_embeddings: List[str],
+                files_from_uploader: List[str],
+                chunk_size_from_slider: int,
+                chunk_overlap_from_slider: int,
+                model_json_from_dropdown: str,
+                selected_library: str,
+        ):
+            return ui_create_database(database_type_name, database_name_from_textbox, selected_embeddings, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json_from_dropdown, selected_library,)
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`
@@ -237,8 +261,8 @@ def create_database_tab():
                 file_uploader,
                 chunk_size_slider,
                 chunk_overlap_slider,
-                model_dropdown_choices_state,  # 👈 To zwraca `str`, ale zamienimy go na instancję
-                selected_library_state
+                model_dropdown_current_choice_state,  # 👈 To zwraca `str`, ale zamienimy go na instancję
+                selected_library_state,
             ],
             []
         )
