@@ -131,10 +131,6 @@ def load_embedding_model(model_instance: str):
             metadata = json.load(f)
             embedding_types = metadata.get("embedding_types", [])
 
-    print(f"✅ Załadowano model: {target_model_name}")
-    print(f"📂 Ścieżka: {selected_model_path}")
-    print(f"🔹 Obsługiwane embeddingi: {embedding_types}")
-
     return SentenceTransformer(
         selected_model_path,
         trust_remote_code=True

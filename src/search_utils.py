@@ -24,7 +24,7 @@ def fetch_saved_databases(database_type: str):
     saved_databases = database_type.db_class.get_saved_databases_from_drive_as_instances()
     list_of_list_of_labels_and_instances = []
     for key, value in saved_databases.items():
-        list_of_list_of_labels_and_instances.append((f'{key} | Model: {value.embedding_model_name} | Embeddings: {[et.value for et in value.embedding_types]} | Chunk Size: {value.chunk_size} | Chunk Overlap: {value.chunk_overlap} | Number of files: {value.file_count}', value.to_dict()))
+        list_of_list_of_labels_and_instances.append((f'{key} | {value.embedding_model_name} | {value.transformer_library.display_name}  | {", ".join([et.value for et in value.embedding_types])} | Chunk Size: {value.chunk_size} | Chunk Overlap: {value.chunk_overlap} | Number of files: {value.file_count}', value.to_dict()))
         print(f'value: {value.to_dict()}')
     return gr.update(choices=list_of_list_of_labels_and_instances)
 

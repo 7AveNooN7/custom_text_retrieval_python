@@ -2,11 +2,13 @@ import os
 import json
 import chromadb
 from tqdm import tqdm
-from src.db_utils import generate_id, is_valid_db_name, split_text_into_chunks
+from src.db_utils import is_valid_db_name, split_text_into_chunks
 from src.config import CHROMA_DB_FOLDER
 from src.embedding_model_utils import load_embedding_model, get_targeted_model_instance
 from src.models.downloaded_model_info import DownloadedModelInfo
+from src.models.text_chunk_model import TextChunkModel
 from src.models.vector_database_info import VectorDatabaseInfo, ChromaVectorDatabase
+from src.save_to_database import generate_id
 
 
 def create_new_database_chroma_db(chosen_vector_database_info_instance: ChromaVectorDatabase):

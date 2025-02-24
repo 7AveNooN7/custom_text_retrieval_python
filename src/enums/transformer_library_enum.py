@@ -1,8 +1,9 @@
+import json
 import os
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 import torch
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
@@ -10,6 +11,8 @@ from src.config import MODEL_FOLDER
 from src.enums.embedding_type_enum import EmbeddingType
 from FlagEmbedding import FlagModel, BGEM3FlagModel
 from huggingface_hub import snapshot_download
+
+
 
 
 class TransformerLibrary(Enum):
@@ -32,6 +35,73 @@ class TransformerLibrary(Enum):
     def list() -> List[str]:
         """Zwraca listę wszystkich wartości enuma"""
         return [e.display_name for e in TransformerLibrary]
+
+    @staticmethod
+    def load_embedding_model(model_name: str) -> str:
+        """
+        Ładuje model Sentence Transformers, szukając folderu, w którym
+        wartość "model_name" w metadata.json pasuje do model_instance.name.
+        """
+        target_model_name = model_name
+        print(f'model_name: {target_model_name}')
+        selected_model_path = None
+
+        # Przeszukujemy MODEL_FOLDER w poszukiwaniu pasującego modelu
+        for model_folder in os.scandir(MODEL_FOLDER):
+            if model_folder.is_dir():
+                metadata_json_path = os.path.join(model_folder.path, "metadata.json")
+
+                if os.path.isfile(metadata_json_path):
+                    try:
+                        with open(metadata_json_path, "r", encoding="utf-8") as f:
+                            metadata = json.load(f)
+                            if metadata.get("model_name") == target_model_name:
+                                selected_model_path = model_folder.path
+                                break  # Znaleźliśmy pasujący model, przerywamy pętlę
+                    except Exception as e:
+                        print(f"⚠️ Błąd podczas odczytu metadata.json w {model_folder.name}: {e}")
+
+        if not selected_model_path:
+            raise FileNotFoundError(f"❌ Nie znaleziono modelu '{target_model_name}' w katalogu {MODEL_FOLDER}")
+
+
+        return selected_model_path
+
+    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[List, List, List]:
+        from src.models.vector_database_info import VectorDatabaseInfo
+        """
+        Generate embeddings based on the enum type and requested embedding type.
+        transformer_library: TransformerLibrary = vector_database_instance.transformer_library
+        """
+        list_of_embeddings_to_create = vector_database_instance.embedding_types
+        dense_embeddings = []
+        sparse_embeddings = []
+        colbert_embeddings = []
+        selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+        if self == TransformerLibrary.SentenceTransformers:
+            embedding_model = SentenceTransformer(
+                selected_model_path
+            )
+
+            dense_embeddings = embedding_model.encode(text_chunks).tolist()
+
+        elif self == TransformerLibrary.FlagEmbedding:
+            embedding_model = BGEM3FlagModel(selected_model_path)
+            generated_embeddings = embedding_model.encode(
+                text_chunks,
+                return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,
+                return_sparse=EmbeddingType.SPARSE in list_of_embeddings_to_create,
+                return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create
+            )
+
+            dense_embeddings = generated_embeddings.get('dense_vecs', [])
+            sparse_embeddings = generated_embeddings.get('lexical_weights', [])
+            colbert_embeddings = generated_embeddings.get('colbert_vecs', [])
+
+
+        return dense_embeddings, sparse_embeddings, colbert_embeddings
+
+
 
     @staticmethod
     def is_sentence_transformer_model(target_dir: str, model_name: str) -> dict:

@@ -1,18 +1,24 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Any, Tuple
 
 import chromadb
+from tqdm import tqdm
+
+from src.config import CHROMA_DB_FOLDER
+from src.embedding_model_utils import load_embedding_model
 from src.enums.embedding_type_enum import EmbeddingType
+from src.enums.transformer_library_enum import TransformerLibrary
 
 
 class VectorDatabaseInfo:
-    def __init__(self, *, database_name: str, embedding_model_name: str, embedding_types: List[EmbeddingType], chunk_size: int, chunk_overlap: int, files_paths: List[str]):
-        self.database_name = database_name
-        self.embedding_model_name = embedding_model_name
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.files_paths = files_paths
-        self.embedding_types=embedding_types
+    def __init__(self, *, database_name: str, embedding_model_name: str, embedding_types: List[EmbeddingType], chunk_size: int, chunk_overlap: int, files_paths: List[str], transformer_library: TransformerLibrary):
+        self.database_name: str = database_name
+        self.embedding_model_name: str = embedding_model_name
+        self.chunk_size: int = chunk_size
+        self.chunk_overlap: int = chunk_overlap
+        self.files_paths: List[str] = files_paths
+        self.embedding_types: List[EmbeddingType] = embedding_types
+        self.transformer_library: TransformerLibrary = transformer_library
 
     string_separator = '|'
 
@@ -24,7 +30,8 @@ class VectorDatabaseInfo:
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.files_paths,
-            "embedding_types": [et.value for et in self.embedding_types]  # Enum -> string
+            "embedding_types": [et.value for et in self.embedding_types], # Enum -> string
+            "transformer_library": self.transformer_library.display_name
         }
 
     @classmethod
@@ -37,6 +44,7 @@ class VectorDatabaseInfo:
             chunk_overlap=data.get("chunk_overlap", 0),
             files_paths=data.get("files_paths", []),
             embedding_types=[EmbeddingType(et) for et in data.get("embedding_types", [])],  # String -> Enum
+            transformer_library=TransformerLibrary.from_display_name(data.get("transformer_library"))
         )
 
     @property
@@ -65,11 +73,12 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.string_separator.join(self.files_paths),
-            "embedding_types": self.string_separator.join(et.value for et in self.embedding_types)  # Enum -> string
+            "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
+            "transformer_library": self.transformer_library.display_name
         }
 
     @classmethod
-    def get_saved_databases_from_drive_as_instances(cls) -> dict:
+    def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
         saved_databases = {}
         database_folder = cls.get_database_type().db_folder
         for db_folder_name in os.listdir(database_folder):
@@ -99,9 +108,27 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             chunk_overlap=metadata.get("chunk_overlap", 0),
             files_paths=metadata.get("files_paths", "N/A").split(cls.string_separator),
             embedding_types=[EmbeddingType(et.strip()) for et in metadata.get("embedding_types", "N/A").split(cls.string_separator) if et],
+            transformer_library=TransformerLibrary.from_display_name(metadata.get("transformer_library", "N/A"))
         )
 
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
+        db_path = os.path.join(CHROMA_DB_FOLDER, self.database_name)
+        chroma_client = chromadb.PersistentClient(path=db_path)
+        collection = chroma_client.get_or_create_collection(
+            name=self.database_name,
+            metadata=self.create_metadata_specific_for_database()
+        )
 
+        if text_chunks:
+            for i in tqdm(range(len(text_chunks)), desc="📥 Dodawanie tekstów do bazy"):
+                collection.add(
+                    ids=[hash_id[i]],
+                    embeddings=[embeddings[0][i]],
+                    documents=[text_chunks[i]],
+                    metadatas=[chunks_metadata[i]]
+                )
+
+        del chroma_client
 
 class LanceVectorDatabase(VectorDatabaseInfo):
     supported_embeddings = [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT]

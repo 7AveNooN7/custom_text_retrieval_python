@@ -12,6 +12,7 @@ from src.lance_db_utils import create_new_database_lance_db
 from src.embedding_model_utils import get_downloaded_models_for_dropdown
 from src.enums.database_type_enum import DatabaseType
 from src.models.downloaded_model_info import DownloadedModelInfo
+from src.save_to_database import save_to_database
 
 
 def ui_create_database(
@@ -50,7 +51,8 @@ def ui_create_database(
         gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
     else:
-        model_instance = DownloadedModelInfo.from_dict(json_data=json.load(model_json))
+        print(f'model_json: {model_json}')
+        model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_json))
 
 
     if not selected_library:
@@ -67,7 +69,8 @@ def ui_create_database(
         chunk_size=chunk_size_from_slider,
         chunk_overlap=chunk_overlap_from_slider,
         files_paths=files_from_uploader,
-        embedding_types=[EmbeddingType(choice) for choice in selected_embeddings]
+        embedding_types=[EmbeddingType(choice) for choice in selected_embeddings],
+        transformer_library=TransformerLibrary.from_display_name(selected_library)
     )
 
     max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
@@ -75,10 +78,12 @@ def ui_create_database(
         gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
         return None
 
-    if db_engine_enum == DatabaseType.CHROMA_DB:
-        create_new_database_chroma_db(chosen_vector_database_info_instance)
-    elif db_engine_enum == DatabaseType.LANCE_DB:
-        create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json)
+
+    save_to_database(chosen_vector_database_info_instance)
+    # if db_engine_enum == DatabaseType.CHROMA_DB:
+    #     create_new_database_chroma_db(chosen_vector_database_info_instance)
+    # elif db_engine_enum == DatabaseType.LANCE_DB:
+    #     create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json)
 
 
 def create_database_tab():
