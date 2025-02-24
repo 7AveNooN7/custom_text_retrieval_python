@@ -130,6 +130,9 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         del chroma_client
 
+    def retrieve_text_from_database(self):
+        return None
+
 class LanceVectorDatabase(VectorDatabaseInfo):
     supported_embeddings = [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT]
     simultaneous_embeddings: int = 3

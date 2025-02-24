@@ -68,7 +68,6 @@ class TransformerLibrary(Enum):
         return selected_model_path
 
     def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[List, List, List]:
-        from src.models.vector_database_info import VectorDatabaseInfo
         """
         Generate embeddings based on the enum type and requested embedding type.
         transformer_library: TransformerLibrary = vector_database_instance.transformer_library

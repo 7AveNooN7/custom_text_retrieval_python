@@ -6,15 +6,29 @@ from src.enums.embedding_type_enum import EmbeddingType
 from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo
 
 class DatabaseType(Enum):
-    CHROMA_DB = ("ChromaDB", ChromaVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 1, CHROMA_DB_FOLDER)
-    LANCE_DB = ("LanceDB", LanceVectorDatabase, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], 3, LANCE_DB_FOLDER)
+    CHROMA_DB = (
+        "ChromaDB",
+        ChromaVectorDatabase,
+        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
+        1,
+        CHROMA_DB_FOLDER
+    )
+    LANCE_DB = (
+        "LanceDB",
+        LanceVectorDatabase,
+        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
+        3,
+        LANCE_DB_FOLDER
+    )
+
+
 
     def __init__(self, display_name: str, db_class: Type["VectorDatabaseInfo"], supported_embeddings: List[EmbeddingType], simultaneous_embeddings: int, db_folder: str):
-        self._display_name = display_name
-        self._db_class = db_class
-        self._supported_embeddings = supported_embeddings
-        self._simultaneous_embeddings = simultaneous_embeddings
-        self._db_folder = db_folder
+        self._display_name: str = display_name
+        self._db_class: Type["VectorDatabaseInfo"] = db_class
+        self._supported_embeddings: List[EmbeddingType] = supported_embeddings
+        self._simultaneous_embeddings: int = simultaneous_embeddings
+        self._db_folder: str = db_folder
 
     @property
     def display_name(self) -> str:
