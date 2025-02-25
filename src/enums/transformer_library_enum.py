@@ -103,7 +103,7 @@ class TransformerLibrary(Enum):
             sparse_embeddings = generated_embeddings.get('lexical_weights', [])
             colbert_embeddings = generated_embeddings.get('colbert_vecs', [])
 
-
+        torch.cuda.empty_cache()
         return dense_embeddings, sparse_embeddings, colbert_embeddings
 
     def perform_search(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: tuple[List, List, List], query: str, vector_database_instance: "VectorDatabaseInfo", top_k: int):
@@ -113,7 +113,6 @@ class TransformerLibrary(Enum):
 
             dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=torch.float32)
             query_embeddings_tensor = torch.tensor(query_embeddings, dtype=torch.float32)
-
 
             result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
 
@@ -126,6 +125,7 @@ class TransformerLibrary(Enum):
                     f"(fragment {corpus_id}, dystans: {score:.4f}, model: {vector_database_instance.embedding_model_name})\n"
                     f"{text_chunks[corpus_id]}\n\n"
                 )
+            torch.cuda.empty_cache()
             return response
 
 

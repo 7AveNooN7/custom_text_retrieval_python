@@ -174,7 +174,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         return response
 
-    def retrieve_from_database(self):
+    def retrieve_from_database(self) -> tuple[List, List, List, tuple[List, List, List]]:
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
@@ -238,7 +238,8 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 #EmbeddingType.COLBERT: embeddings[2][i],
                 'text': text_chunks[i],
                 'source': chunks_metadata[i]['source'],
-                "fragment_id": chunks_metadata[i]["fragment_id"]
+                "fragment_id": chunks_metadata[i]["fragment_id"],
+                'hash_id': hash_id[i]
             })
 
         # Determine embedding dimension
@@ -249,6 +250,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             pa.field("text", pa.string()),
             pa.field("source", pa.string()),
             pa.field("fragment_id", pa.int32()),
+            pa.field("hash_id", pa.string())
         ])
 
         df = pd.DataFrame(all_records)
@@ -265,5 +267,61 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         del lance_db
 
-        print('ZAPISANO do lanceDB')
+    def retrieve_from_database(self) -> tuple[List, List, List, tuple[List, List, List]]:
+        db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
+        lance_db = lancedb.connect(db_path)
+        table = lance_db.open_table(self.database_name)
+
+        row_count = table.count_rows()
+        print(f'row_count: {row_count}')
+        # Odczytanie danych z tabeli jako DataFrame
+        df = table.to_lance().to_table().to_pandas() # BUG W LANCE DB ZE TYLKO 10 REKORDOW ZWRACA
+
+        # Rozpakowanie danych do zmiennych
+        text_chunks: List = df['text'].tolist()
+        chunks_metadata: List = [{'source': row['source'], 'fragment_id': row['fragment_id']} for _, row in df.iterrows()]
+        dense_embeddings = [list(embedding) for embedding in df[EmbeddingType.DENSE.value]]
+        hash_id = df['hash_id'].tolist()
+
+        del lance_db
+
+        return text_chunks, chunks_metadata, hash_id, (dense_embeddings, [], [])
+
+    def perform_search(self, *, query: str, top_k: int):
+        db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
+        lance_db = lancedb.connect(db_path)
+        table = lance_db.open_table(self.database_name)
+
+        transformer_library = self.transformer_library
+        query_embedding: List = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
+
+        results = (
+            table.search(query_embedding, EmbeddingType.DENSE.value)
+            .limit(top_k)
+            .select(["text", "source", "fragment_id"])
+            .to_df()
+        )
+
+        print(f'results1: {results}')
+
+        if "score" in results.columns:
+            results = results.sort_values("score", ascending=True)
+        elif "distance" in results.columns:
+            results = results.sort_values("distance", ascending=True)
+
+            # Budujemy odpowiedź
+        response = ""
+        for idx, row in results.iterrows():
+            if "_distance" in row:
+                score_val = f"distance: {row['_distance']:.4f}"
+            elif "score" in row:
+                score_val = f"(score: {row['score']:.4f})"
+            else:
+                score_val = ""
+            response += (
+                f"📄 Plik: {row['source']} "
+                f"(fragment {row['fragment_id']}, {score_val}, model: {self.embedding_model_name})\n"
+                f"{row['text']}\n\n"
+            )
+        return response
 

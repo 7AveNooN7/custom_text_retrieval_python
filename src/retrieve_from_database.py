@@ -31,9 +31,11 @@ def perform_search(*, vector_database_instance: VectorDatabaseInfo, search_metho
         text_chunks: List[str]
         chunks_metadata: List[dict]
         hash_id: List[str]
-        embeddings: tuple[List, List, List]
+        embeddings: tuple[List, List, List] #Dense, Sparse, Colbert
 
         text_chunks, chunks_metadata, hash_id, embeddings = result
+
+        print(f'embeddings len: {len(embeddings[0])} text_chunks len: {len(text_chunks)}')
 
         return search_type.perform_search(
             text_chunks=text_chunks,
