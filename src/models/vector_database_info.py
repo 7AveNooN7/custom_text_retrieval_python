@@ -1,8 +1,12 @@
+import json
 import os
 from typing import List, Dict, Any, Tuple
 
 import chromadb
+import lancedb
 from tqdm import tqdm
+import pyarrow as pa
+import pandas as pd
 
 from src.config import CHROMA_DB_FOLDER
 from src.embedding_model_utils import load_embedding_model
@@ -119,20 +123,93 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             metadata=self.create_metadata_specific_for_database()
         )
 
+        embeddings_types = self.embedding_types
+        embedding_type = embeddings_types[0]
+        if embedding_type == EmbeddingType.DENSE:
+            index = 0
+        elif embedding_type == EmbeddingType.SPARSE:
+            index = 1
+        elif embedding_type == EmbeddingType.COLBERT:
+            index = 2
+
+
         if text_chunks:
-            for i in tqdm(range(len(text_chunks)), desc="📥 Dodawanie tekstów do bazy"):
+            for i in tqdm(range(len(text_chunks)), desc="📥 Tworzenie bazy danych"):
                 collection.add(
                     ids=[hash_id[i]],
-                    embeddings=[embeddings[0][i]],
+                    embeddings=[embeddings[0][i]], # MOZE PRZYJAC TYLKO DENSE
                     documents=[text_chunks[i]],
                     metadatas=[chunks_metadata[i]]
                 )
 
         del chroma_client
 
-    def retrieve_text_from_database(self):
+    def retrieve_from_database(self, *, query: str):
+
         return None
 
 class LanceVectorDatabase(VectorDatabaseInfo):
-    supported_embeddings = [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT]
-    simultaneous_embeddings: int = 3
+
+    @classmethod
+    def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
+        saved_databases = {}
+        database_folder = cls.get_database_type().db_folder
+        for db_folder_name in os.listdir(database_folder):
+            db_path = os.path.join(database_folder, db_folder_name)
+            if not os.path.isdir(db_path):
+                continue
+            chroma_client = chromadb.PersistentClient(path=db_path)
+            try:
+                collection = chroma_client.get_or_create_collection(name=db_folder_name)
+                metadata = collection.metadata or {}
+                # TU JEST PROBLEM
+                chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
+                database_name = chroma_vector_instance.database_name
+                saved_databases[database_name] = chroma_vector_instance
+            finally:
+                del chroma_client  # Zamknięcie klienta po każdej iteracji
+
+        return saved_databases
+
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
+        db_path = os.path.join(CHROMA_DB_FOLDER, self.database_name)
+        os.makedirs(db_path, exist_ok=True)
+        lance_db = lancedb.connect(db_path)
+
+        all_records = []
+
+        for i in tqdm(range(len(text_chunks)), desc="📥 Tworzenie bazy danych"):
+            all_records.append({
+                EmbeddingType.DENSE.value: embeddings[0][i],
+                #EmbeddingType.SPARSE.value: embeddings[1][i], LANCEDB NIE WSPIERA SPARSE I COLBERT BEKA
+                #EmbeddingType.COLBERT: embeddings[2][i],
+                'text': text_chunks[i],
+                'source': chunks_metadata[i]['source'],
+                "fragment_id": chunks_metadata[i]["fragment_id"]
+            })
+
+        # Determine embedding dimension
+        embedding_dim = len(all_records[0]['embedding'])
+        # Define schema with FixedSizeList for embedding
+        schema = pa.schema([
+            pa.field("EmbeddingType.DENSE.value", pa.list_(pa.float32(), embedding_dim)),
+            pa.field("text", pa.string()),
+            pa.field("source", pa.string()),
+            pa.field("fragment_id", pa.int32()),
+        ])
+
+        df = pd.DataFrame(all_records)
+
+        database_name = self.database_name
+
+        if database_name in lance_db.table_names():
+            lance_db.drop_table(database_name)
+        lance_db.create_table(database_name, data=df, schema=schema)
+
+        metadata_string = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
+        with open(os.path.join(db_path, "metadata.json"), "w", encoding="utf-8") as f:
+            f.write(metadata_string)
+
+        del lance_db
+
+        print('ZAPISANO do lanceDB')

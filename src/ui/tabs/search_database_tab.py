@@ -1,4 +1,5 @@
 import json
+from typing import List, Tuple
 
 import gradio as gr
 from src.enums.database_type_enum import DatabaseType
@@ -13,8 +14,7 @@ def search_database_tab():
         # WYBÓR SILNIKA BAZY DANYCH
         database_type_dropdown = gr.Dropdown(
             choices=[db.display_name for db in DatabaseType],
-            value="Naciśnij, aby wybrać",
-            allow_custom_value=True,
+            value=None,
             label="Wybierz silnik bazy wektorowej"
         )
 
@@ -22,6 +22,7 @@ def search_database_tab():
         # WYBÓR ZAPISANEJ BAZY DANYCH
         saved_database_dropdown = gr.Dropdown(
             choices=[],
+            value=None,
             label="📂 Wybierz bazę (Wyszukiwanie)"
         )
 
@@ -30,6 +31,7 @@ def search_database_tab():
             database_type_dropdown,
             saved_database_dropdown
         )
+
 
         query_input = gr.Textbox(
             label="🔎 Wpisz swoje pytanie"
@@ -41,14 +43,42 @@ def search_database_tab():
             step=1,
             label="🔝 Liczba najlepszych wyników"
         )
+        search_method_choice = gr.State()
+        def update_search_method_choice(value: str):
+            return value
 
-        @gr.render(inputs=[])
-        def create_search_choices():
-            gr.Radio(
-                label='Wybierz metodę wyszukiwania',
-                choices=['Native ChromaDB search', 'Sentence Transformers search'],
-                value=None
-            )
+        # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z search_method_choice
+        database_type_dropdown.change(
+            update_search_method_choice,
+            gr.State(None),
+            search_method_choice
+        )
+
+        # # GDY ZMIENIA SIE WYBOR ZAPISANEJ BAZY ZERUJEMY WYBÓR Z search_method_choice
+        saved_database_dropdown.change(
+            update_search_method_choice,
+            gr.State(None),
+            search_method_choice
+        )
+
+        @gr.render(inputs=[database_type_dropdown, saved_database_dropdown])
+        def create_search_choices(database_type: str, vector_database_instance_json: str):
+            if database_type and vector_database_instance_json:
+                choices: List[Tuple[str, str]] = []
+                choices.append((f'Native {database_type} search', database_type))
+                vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
+                choices.append((f'{vector_database_instance.transformer_library.display_name} search', vector_database_instance.transformer_library.display_name))
+                radio_buttons = gr.Radio(
+                    label='Wybierz metodę wyszukiwania',
+                    choices=choices,
+                    value=None
+                )
+
+                radio_buttons.change(
+                    update_search_method_choice,
+                    [radio_buttons],
+                    [search_method_choice]
+                )
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
@@ -63,15 +93,21 @@ def search_database_tab():
 
         search_btn.click(
             ui_search_database,
-            [database_type_dropdown, saved_database_dropdown, query_input, top_k_slider],
+            [database_type_dropdown, saved_database_dropdown, query_input, top_k_slider, search_method_choice],
             []#[token_output, search_output]
         )
 
 
-def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int):
+
+def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
-    retrieve_from_database(vector_database_instance)
+    retrieve_from_database(
+        vector_database_instance=vector_database_instance,
+        search_method=search_method
+    )
+    print(f'search_method: {search_method}')
+    print(f'vector_database_instance_json: {vector_database_instance_json}')
     return None
     #
     # token_count = count_tokens(retrieved_text)

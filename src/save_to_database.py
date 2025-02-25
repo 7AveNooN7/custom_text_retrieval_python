@@ -68,7 +68,6 @@ def generate_text_chunks(vector_database_instance: VectorDatabaseInfo) -> tuple[
 
 def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> Tuple[List, List, List]:
     transformer_library: TransformerLibrary = vector_database_instance.transformer_library
-    print(f'transformer_library: {transformer_library}')
     dense_embeddings, sparse_embeddings, colbert_embeddings = transformer_library.generate_embeddings(text_chunk, vector_database_instance)
     return dense_embeddings, sparse_embeddings, colbert_embeddings
 

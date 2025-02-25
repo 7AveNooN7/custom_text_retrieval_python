@@ -80,10 +80,6 @@ def ui_create_database(
 
 
     save_to_database(chosen_vector_database_info_instance)
-    # if db_engine_enum == DatabaseType.CHROMA_DB:
-    #     create_new_database_chroma_db(chosen_vector_database_info_instance)
-    # elif db_engine_enum == DatabaseType.LANCE_DB:
-    #     create_new_database_lance_db(db_name_from_textbox, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json)
 
 
 def create_database_tab():

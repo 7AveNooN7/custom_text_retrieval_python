@@ -16,12 +16,19 @@ from huggingface_hub import snapshot_download
 
 
 class TransformerLibrary(Enum):
-    FlagEmbedding = ("FlagEmbedding", [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT])
-    SentenceTransformers = ("SentenceTransformers", [EmbeddingType.DENSE])
+    FlagEmbedding = (
+        "FlagEmbedding",
+        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT]
+    )
+    SentenceTransformers = (
+        "SentenceTransformers",
+        [EmbeddingType.DENSE]
+    )
 
-    def __init__(self, display_name, supported_embeddings: List[EmbeddingType]):
-        self.display_name = display_name
-        self.supported_embeddings = supported_embeddings
+    def __init__(self, display_name: str, supported_embeddings: List[EmbeddingType]):
+        self.display_name: str = display_name
+        self.supported_embeddings: List[EmbeddingType] = supported_embeddings
+
 
     @classmethod
     def from_display_name(cls, display_name: str):
@@ -87,7 +94,7 @@ class TransformerLibrary(Enum):
         elif self == TransformerLibrary.FlagEmbedding:
             embedding_model = BGEM3FlagModel(selected_model_path)
             generated_embeddings = embedding_model.encode(
-                text_chunks,
+                sentences=text_chunks,
                 return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,
                 return_sparse=EmbeddingType.SPARSE in list_of_embeddings_to_create,
                 return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create

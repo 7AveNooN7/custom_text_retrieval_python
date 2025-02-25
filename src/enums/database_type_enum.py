@@ -9,14 +9,14 @@ class DatabaseType(Enum):
     CHROMA_DB = (
         "ChromaDB",
         ChromaVectorDatabase,
-        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
+        [EmbeddingType.DENSE],
         1,
         CHROMA_DB_FOLDER
     )
     LANCE_DB = (
         "LanceDB",
         LanceVectorDatabase,
-        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
+        [EmbeddingType.DENSE],
         3,
         LANCE_DB_FOLDER
     )
