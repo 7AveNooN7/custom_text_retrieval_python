@@ -4,33 +4,80 @@ from typing import List, Tuple
 import gradio as gr
 from src.enums.database_type_enum import DatabaseType
 from src.models.vector_database_info import VectorDatabaseInfo
-from src.retrieve_from_database import retrieve_from_database
+from src.retrieve_from_database import perform_search
 from src.search_utils import count_tokens, fetch_saved_databases
 from src.chroma_db_utils import retrieve_text_from_chroma_db
 from src.lance_db_utils import retrieve_text_from_lance_db
 
 def search_database_tab():
     with gr.Tab("🔎 Wyszukiwanie w bazie"):
-        # WYBÓR SILNIKA BAZY DANYCH
-        database_type_dropdown = gr.Dropdown(
-            choices=[db.display_name for db in DatabaseType],
-            value=None,
-            label="Wybierz silnik bazy wektorowej"
-        )
+
+        ###################### DATABASE TYPE DROPDOWN ######################
+        # STATE
+        selected_database_engine_state = gr.State()
+        def update_selected_database_engine_state(db_engine: str):
+            return db_engine
+
+        # COMPONENT
+        @gr.render(inputs=[])
+        def create_database_engine_dropdown():
+            database_type_dropdown = gr.Dropdown(
+                choices=[db.display_name for db in DatabaseType],
+                value=None,
+                label="Wybierz silnik bazy wektorowej"
+            )
+
+            # ZMIENIA STAN SAMEGO SIEBIE
+            database_type_dropdown.change(
+                update_selected_database_engine_state,
+                database_type_dropdown,
+                selected_database_engine_state
+            )
+
+            # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z saved_database_dropdown
+            database_type_dropdown.change(
+                update_selected_database_state,
+                gr.State(None),
+                selected_database_state
+            )
+
+            # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z search_method_choice
+            database_type_dropdown.change(
+                update_search_method_choice,
+                gr.State(None),
+                search_method_choice
+            )
 
 
-        # WYBÓR ZAPISANEJ BAZY DANYCH
-        saved_database_dropdown = gr.Dropdown(
-            choices=[],
-            value=None,
-            label="📂 Wybierz bazę (Wyszukiwanie)"
-        )
+        ###################### SAVED DATABASE DROPDOWN ######################
+        # STATE
+        selected_database_state = gr.State()
+        def update_selected_database_state(db_engine: str):
+            return db_engine
 
-        database_type_dropdown.change(
-            fetch_saved_databases,
-            database_type_dropdown,
-            saved_database_dropdown
-        )
+        # COMPONENT
+        @gr.render(inputs=[selected_database_engine_state])
+        def create_saved_database_dropdown(selected_database_engine: str):
+            if selected_database_engine:
+                choices = fetch_saved_databases(selected_database_engine)
+                saved_database_dropdown = gr.Dropdown(
+                    choices=choices,
+                    value=None,
+                    label="📂 Wybierz bazę (Wyszukiwanie)"
+                )
+
+                saved_database_dropdown.change(
+                    update_selected_database_state,
+                    saved_database_dropdown,
+                    selected_database_state
+                )
+
+                # # GDY ZMIENIA SIE WYBOR ZAPISANEJ BAZY ZERUJEMY WYBÓR Z search_method_choice
+                saved_database_dropdown.change(
+                    update_search_method_choice,
+                    gr.State(None),
+                    search_method_choice
+                )
 
 
         query_input = gr.Textbox(
@@ -47,21 +94,9 @@ def search_database_tab():
         def update_search_method_choice(value: str):
             return value
 
-        # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z search_method_choice
-        database_type_dropdown.change(
-            update_search_method_choice,
-            gr.State(None),
-            search_method_choice
-        )
 
-        # # GDY ZMIENIA SIE WYBOR ZAPISANEJ BAZY ZERUJEMY WYBÓR Z search_method_choice
-        saved_database_dropdown.change(
-            update_search_method_choice,
-            gr.State(None),
-            search_method_choice
-        )
 
-        @gr.render(inputs=[database_type_dropdown, saved_database_dropdown])
+        @gr.render(inputs=[selected_database_engine_state, selected_database_state])
         def create_search_choices(database_type: str, vector_database_instance_json: str):
             if database_type and vector_database_instance_json:
                 choices: List[Tuple[str, str]] = []
@@ -93,8 +128,8 @@ def search_database_tab():
 
         search_btn.click(
             ui_search_database,
-            [database_type_dropdown, saved_database_dropdown, query_input, top_k_slider, search_method_choice],
-            []#[token_output, search_output]
+            [selected_database_engine_state, selected_database_state, query_input, top_k_slider, search_method_choice],
+            [token_output, search_output]
         )
 
 
@@ -102,13 +137,12 @@ def search_database_tab():
 def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
-    retrieve_from_database(
+    retrieved_text = perform_search(
         vector_database_instance=vector_database_instance,
-        search_method=search_method
+        search_method=search_method,
+        query=query,
+        top_k=top_k
     )
-    print(f'search_method: {search_method}')
-    print(f'vector_database_instance_json: {vector_database_instance_json}')
-    return None
-    #
-    # token_count = count_tokens(retrieved_text)
-    # return token_count, retrieved_text
+    print(f'retrieved_text: {retrieved_text}')
+    token_count = count_tokens(retrieved_text)
+    return token_count, retrieved_text

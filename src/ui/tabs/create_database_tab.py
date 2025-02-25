@@ -85,7 +85,7 @@ def ui_create_database(
 def create_database_tab():
     with gr.Tab("📂 Tworzenie nowej bazy"):
 
-        ###################### DATABASE DROPDOWN ######################
+        ###################### DATABASE TYPE DROPDOWN ######################
         selected_database_engine_state = gr.State()
         def change_selected_database_engine_state(db_engine: str):
             return db_engine

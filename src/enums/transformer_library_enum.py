@@ -14,7 +14,6 @@ from huggingface_hub import snapshot_download
 
 
 
-
 class TransformerLibrary(Enum):
     FlagEmbedding = (
         "FlagEmbedding",
@@ -106,6 +105,32 @@ class TransformerLibrary(Enum):
 
 
         return dense_embeddings, sparse_embeddings, colbert_embeddings
+
+    def perform_search(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: tuple[List, List, List], query: str, vector_database_instance: "VectorDatabaseInfo", top_k: int):
+        if self == TransformerLibrary.SentenceTransformers:
+            dense_embeddings = embeddings[0] # ONLY DENSE
+            query_embeddings = self.generate_embeddings([query], vector_database_instance)[0] # ONLY DENSE
+
+            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=torch.float32)
+            query_embeddings_tensor = torch.tensor(query_embeddings, dtype=torch.float32)
+
+
+            result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
+
+            response = ""
+            for result_from_dict in result[0]:
+                corpus_id: int = result_from_dict['corpus_id']
+                score = result_from_dict['score']
+                response += (
+                    f"📄 Plik: {chunks_metadata[corpus_id]["source"]} "
+                    f"(fragment {corpus_id}, dystans: {score:.4f}, model: {vector_database_instance.embedding_model_name})\n"
+                    f"{text_chunks[corpus_id]}\n\n"
+                )
+            return response
+
+
+        elif self == TransformerLibrary.FlagEmbedding:
+            return None
 
 
 

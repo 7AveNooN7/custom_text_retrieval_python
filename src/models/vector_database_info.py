@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Tuple
 
 import chromadb
 import lancedb
+from chromadb.api.types import IncludeEnum
 from tqdm import tqdm
 import pyarrow as pa
 import pandas as pd
@@ -116,7 +117,8 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         )
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
-        db_path = os.path.join(CHROMA_DB_FOLDER, self.database_name)
+        database_folder = self.get_database_type().db_folder
+        db_path = os.path.join(database_folder, self.database_name)
         chroma_client = chromadb.PersistentClient(path=db_path)
         collection = chroma_client.get_or_create_collection(
             name=self.database_name,
@@ -144,9 +146,58 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         del chroma_client
 
-    def retrieve_from_database(self, *, query: str):
+    def perform_search(self, *, query: str, top_k: int):
+        database_folder = self.get_database_type().db_folder
+        db_path = os.path.join(database_folder, self.database_name)
 
-        return None
+        chroma_client = chromadb.PersistentClient(path=db_path)
+        collection = chroma_client.get_or_create_collection(name=self.database_name)
+
+        transformer_library = self.transformer_library
+        query_embedding: List = transformer_library.generate_embeddings([query], self)[0] # TYLKO DENSE INDEX 0
+
+        results = collection.query(query_embeddings=query_embedding, n_results=top_k)
+
+        sorted_results = sorted(
+            zip(results["documents"][0], results["metadatas"][0], results["distances"][0]),
+            key=lambda x: x[2]
+        )
+
+        # Budujemy odpowiedź tekstową
+        response = ""
+        for doc, meta, dist in sorted_results:
+            response += (
+                f"📄 Plik: {meta['source']} "
+                f"(fragment {meta['fragment_id']}, dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
+                f"{doc}\n\n"
+            )
+
+        return response
+
+    def retrieve_from_database(self):
+        # Ścieżka do bazy danych
+        database_folder = self.get_database_type().db_folder
+        db_path = os.path.join(database_folder, self.database_name)
+
+        # Połączenie z bazą
+        chroma_client = chromadb.PersistentClient(path=db_path)
+        collection = chroma_client.get_or_create_collection(name=self.database_name)
+
+        # Pobieranie wszystkich danych
+        results = collection.get(
+            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings],
+        )
+
+        # Przypisanie danych do zmiennych
+        text_chunks = results["documents"]
+        chunks_metadata = results["metadatas"]
+        hash_id = results["ids"]
+        dense_embeddings = results["embeddings"]
+
+        del chroma_client
+
+        return text_chunks, chunks_metadata, hash_id, (dense_embeddings, [], [])
+
 
 class LanceVectorDatabase(VectorDatabaseInfo):
 
@@ -156,23 +207,25 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         database_folder = cls.get_database_type().db_folder
         for db_folder_name in os.listdir(database_folder):
             db_path = os.path.join(database_folder, db_folder_name)
-            if not os.path.isdir(db_path):
-                continue
-            chroma_client = chromadb.PersistentClient(path=db_path)
+            metadata_path = os.path.join(db_path, "metadata.json")
             try:
-                collection = chroma_client.get_or_create_collection(name=db_folder_name)
-                metadata = collection.metadata or {}
-                # TU JEST PROBLEM
-                chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
-                database_name = chroma_vector_instance.database_name
-                saved_databases[database_name] = chroma_vector_instance
-            finally:
-                del chroma_client  # Zamknięcie klienta po każdej iteracji
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata_dict = json.load(f)
+            except FileNotFoundError:
+                print("Plik metadata.json nie istnieje.")
+            except json.JSONDecodeError:
+                print("Błąd: Plik nie jest poprawnym JSON-em.")
+
+            lance_vector_instance = cls.from_dict(data=metadata_dict)
+            database_name = lance_vector_instance.database_name
+            saved_databases[database_name] = lance_vector_instance
+
 
         return saved_databases
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
-        db_path = os.path.join(CHROMA_DB_FOLDER, self.database_name)
+        database_folder = self.get_database_type().db_folder
+        db_path = os.path.join(database_folder, self.database_name)
         os.makedirs(db_path, exist_ok=True)
         lance_db = lancedb.connect(db_path)
 
@@ -189,10 +242,10 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             })
 
         # Determine embedding dimension
-        embedding_dim = len(all_records[0]['embedding'])
+        embedding_dim = len(all_records[0][EmbeddingType.DENSE.value])
         # Define schema with FixedSizeList for embedding
         schema = pa.schema([
-            pa.field("EmbeddingType.DENSE.value", pa.list_(pa.float32(), embedding_dim)),
+            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), embedding_dim)),
             pa.field("text", pa.string()),
             pa.field("source", pa.string()),
             pa.field("fragment_id", pa.int32()),
@@ -213,3 +266,4 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         del lance_db
 
         print('ZAPISANO do lanceDB')
+
