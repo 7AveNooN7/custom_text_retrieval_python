@@ -1,9 +1,18 @@
 from enum import Enum
-from typing import Type, List
+from typing import Type, List, Dict
 
 from src.config import CHROMA_DB_FOLDER, LANCE_DB_FOLDER
 from src.enums.embedding_type_enum import EmbeddingType
 from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo
+
+class DatabaseFeature(Enum):
+    LANCEDB_FULL_TEXT_SEARCH = "LanceDB Full Text Search"
+    LANCEDB_HYBRID_SEARCH = "LanceDB Hybrid Search"
+    HNSW_INDEX = "hnsw_index"
+    FILTERING = "filtering"
+    MULTI_MODAL = "multi_modal"
+    COMPRESSION = "compression"
+    RERANKING = "reranking"
 
 class DatabaseType(Enum):
     CHROMA_DB = (
@@ -11,24 +20,38 @@ class DatabaseType(Enum):
         ChromaVectorDatabase,
         [EmbeddingType.DENSE],
         1,
-        CHROMA_DB_FOLDER
+        CHROMA_DB_FOLDER,
+        {}
     )
     LANCE_DB = (
         "LanceDB",
         LanceVectorDatabase,
         [EmbeddingType.DENSE],
-        3,
-        LANCE_DB_FOLDER
+        1,
+        LANCE_DB_FOLDER,
+        {
+            DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
+                "use_tantivy": True
+            }
+        }
     )
 
 
-
-    def __init__(self, display_name: str, db_class: Type["VectorDatabaseInfo"], supported_embeddings: List[EmbeddingType], simultaneous_embeddings: int, db_folder: str):
+    def __init__(
+            self,
+            display_name: str,
+            db_class: Type["VectorDatabaseInfo"],
+            supported_embeddings: List[EmbeddingType],
+            simultaneous_embeddings: int,
+            db_folder: str,
+            features: Dict[str, dict]
+    ):
         self._display_name: str = display_name
         self._db_class: Type["VectorDatabaseInfo"] = db_class
         self._supported_embeddings: List[EmbeddingType] = supported_embeddings
         self._simultaneous_embeddings: int = simultaneous_embeddings
         self._db_folder: str = db_folder
+        self._features: Dict[str, dict] = features if features is not None else {}
 
     @property
     def display_name(self) -> str:
@@ -50,6 +73,11 @@ class DatabaseType(Enum):
     def db_folder(self) -> str:
         """Zwraca ścieżkę do folderu bazy danych."""
         return self._db_folder
+
+    @property
+    def features(self) -> Dict[str, dict]:
+        """Zwraca zbiór obsługiwanych funkcji przez bazę danych."""
+        return self._features
 
     def __str__(self):
         return self.display_name

@@ -2,7 +2,7 @@ import hashlib
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Tuple
-
+import gradio as gr
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.vector_database_info import VectorDatabaseInfo
 
@@ -74,8 +74,11 @@ def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorD
 
 def save_to_database(vector_database_instance: VectorDatabaseInfo):
     text_chunks, chunks_metadata, hash_id = generate_text_chunks(vector_database_instance)
+    gr.Info("✅ Text Chunks created!")
     embeddings: Tuple[List, List, List] = generate_embeddings(text_chunks, vector_database_instance)
+    gr.Info("✅ Embeddings created!")
     vector_database_instance.create_new_database(text_chunks=text_chunks, chunks_metadata=chunks_metadata, hash_id=hash_id, embeddings=embeddings)
+    gr.Info("✅ Database created!")
 
 
 

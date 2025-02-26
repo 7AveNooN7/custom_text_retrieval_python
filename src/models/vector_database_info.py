@@ -16,7 +16,16 @@ from src.enums.transformer_library_enum import TransformerLibrary
 
 
 class VectorDatabaseInfo:
-    def __init__(self, *, database_name: str, embedding_model_name: str, embedding_types: List[EmbeddingType], chunk_size: int, chunk_overlap: int, files_paths: List[str], transformer_library: TransformerLibrary):
+    def __init__(
+            self, *,
+            database_name: str,
+            embedding_model_name: str,
+            embedding_types: List[EmbeddingType],
+            chunk_size: int, chunk_overlap: int,
+            files_paths: List[str],
+            transformer_library: TransformerLibrary,
+            features: Dict[str, dict] = None
+    ):
         self.database_name: str = database_name
         self.embedding_model_name: str = embedding_model_name
         self.chunk_size: int = chunk_size
@@ -24,6 +33,7 @@ class VectorDatabaseInfo:
         self.files_paths: List[str] = files_paths
         self.embedding_types: List[EmbeddingType] = embedding_types
         self.transformer_library: TransformerLibrary = transformer_library
+        self._features: Dict[str, dict] = features if features is not None else {}
 
     string_separator = '|'
 
@@ -36,7 +46,8 @@ class VectorDatabaseInfo:
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.files_paths,
             "embedding_types": [et.value for et in self.embedding_types], # Enum -> string
-            "transformer_library": self.transformer_library.display_name
+            "transformer_library": self.transformer_library.display_name,
+            "features": self._features
         }
 
     @classmethod
@@ -49,7 +60,8 @@ class VectorDatabaseInfo:
             chunk_overlap=data.get("chunk_overlap", 0),
             files_paths=data.get("files_paths", []),
             embedding_types=[EmbeddingType(et) for et in data.get("embedding_types", [])],  # String -> Enum
-            transformer_library=TransformerLibrary.from_display_name(data.get("transformer_library"))
+            transformer_library=TransformerLibrary.from_display_name(data.get("transformer_library")),
+            features=data.get("features")
         )
 
     @property
@@ -79,7 +91,8 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.string_separator.join(self.files_paths),
             "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
-            "transformer_library": self.transformer_library.display_name
+            "transformer_library": self.transformer_library.display_name,
+            "features": self._features
         }
 
     @classmethod

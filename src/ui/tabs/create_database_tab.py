@@ -1,7 +1,11 @@
+import asyncio
 import json
+import time
 from typing import List, Literal, Tuple
 
 import gradio as gr
+from markdown_it.cli.parse import interactive
+from pypika.enums import Boolean
 
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.db_utils import get_databases_with_info, is_valid_db_name
@@ -10,7 +14,7 @@ from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.lance_db_utils import create_new_database_lance_db
 from src.embedding_model_utils import get_downloaded_models_for_dropdown
-from src.enums.database_type_enum import DatabaseType
+from src.enums.database_type_enum import DatabaseType, DatabaseFeature
 from src.models.downloaded_model_info import DownloadedModelInfo
 from src.save_to_database import save_to_database
 
@@ -23,7 +27,8 @@ def ui_create_database(
         chunk_size_from_slider: int,
         chunk_overlap_from_slider: int,
         model_json: str,
-        selected_library: str
+        selected_library: str,
+        features_dict: dict
 ):
     """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
     # Walidacja nazwy bazy
@@ -70,7 +75,8 @@ def ui_create_database(
         chunk_overlap=chunk_overlap_from_slider,
         files_paths=files_from_uploader,
         embedding_types=[EmbeddingType(choice) for choice in selected_embeddings],
-        transformer_library=TransformerLibrary.from_display_name(selected_library)
+        transformer_library=TransformerLibrary.from_display_name(selected_library),
+        features=features_dict
     )
 
     max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
@@ -78,12 +84,21 @@ def ui_create_database(
         gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
         return None
 
+    saved_databases_dict: dict = chosen_vector_database_info_instance.get_saved_databases_from_drive_as_instances()
+    saved_database_list = list(saved_databases_dict.keys())
+
+    if db_name_from_textbox in saved_database_list:
+        gr.Warning(f"❌ Już istnieje baza danych o takiej nazwie!")
+        return None
+
 
     save_to_database(chosen_vector_database_info_instance)
+    return None
 
 
 def create_database_tab():
     with gr.Tab("📂 Tworzenie nowej bazy"):
+        features_dict: dict = {}
 
         ###################### DATABASE TYPE DROPDOWN ######################
         selected_database_engine_state = gr.State()
@@ -107,6 +122,12 @@ def create_database_tab():
                 change_selected_database_engine_state,
                 [db_engine_dropdown],
                 [selected_database_engine_state]
+            )
+
+            db_engine_dropdown.change(
+                update_lance_db_fts_state,
+                [gr.State(None), gr.State(None)],
+                [lance_db_fts_state]
             )
 
 
@@ -224,6 +245,70 @@ def create_database_tab():
                     outputs=selected_embeddings_state
                 )
 
+        ###################### LANCE DB FTS ######################
+        lance_db_fts_state = gr.State({})
+        def update_lance_db_fts_state(create_fts: Boolean, use_tantivy: str):
+            main_key: str = DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value
+            new_dict = {}
+            if create_fts and use_tantivy:
+                use_tantivy_boolean: Boolean = json.loads(use_tantivy)
+                lance_db_features: dict = DatabaseType.LANCE_DB.features
+                if create_fts:
+                    new_dict = {
+                        main_key: lance_db_features.get(main_key)
+                    }
+                    new_dict[main_key]["use_tantivy"] = use_tantivy_boolean
+            if not new_dict:
+                features_dict.pop(main_key, None)
+            else:
+                features_dict.update(new_dict)
+            return new_dict
+
+
+        @gr.render(inputs=[selected_database_engine_state])
+        def create_lance_db_fts(database_engine: str):
+            if database_engine:
+                database_type: DatabaseType = DatabaseType.from_display_name(database_engine)
+                if database_type == DatabaseType.LANCE_DB:
+                    database_features = database_type.features
+                    if DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in database_features:
+                        with gr.Row(
+                            variant='compact',
+                            equal_height=True
+                        ):
+                            checkbox = gr.Checkbox(
+                                label="Create FTS index",
+                                value=False,
+                                info="Native LanceDB feature for creating BM25 index"
+                            )
+
+                            # Definiujemy opcje jako krotki (label, value)
+                            radio_choices = [
+                                ("Tantivy", json.dumps(True)),
+                                ("Native LanceDB FTS", json.dumps(False))
+                            ]
+
+                            use_tantivy_from_enum = database_features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]["use_tantivy"]
+                            radio = gr.Radio(
+                                show_label=False,
+                                info='Use native LanceDB implementation or Tantivy',
+                                value=json.dumps(use_tantivy_from_enum),
+                                choices=radio_choices
+                            )
+
+                            radio.change(
+                                update_lance_db_fts_state,
+                                [checkbox, radio],
+                                lance_db_fts_state
+                            )
+
+                            checkbox.change(
+                                update_lance_db_fts_state,
+                                [checkbox, radio],
+                                lance_db_fts_state
+                            )
+
+
         ###################### SLIDERS ######################
         chunk_size_slider = gr.Slider(
             1,
@@ -249,9 +334,28 @@ def create_database_tab():
                 chunk_size_from_slider: int,
                 chunk_overlap_from_slider: int,
                 model_json_from_dropdown: str,
-                selected_library: str,
+                selected_library: str
         ):
-            return ui_create_database(database_type_name, database_name_from_textbox, selected_embeddings, files_from_uploader, chunk_size_from_slider, chunk_overlap_from_slider, model_json_from_dropdown, selected_library,)
+            yield gr.update(value="🚀 Tworzenie bazy danych!", interactive=False)
+
+            # 2️⃣ Wywołujemy faktyczną operację
+            ui_create_database(
+                database_type_name,
+                database_name_from_textbox,
+                selected_embeddings,
+                files_from_uploader,
+                chunk_size_from_slider,
+                chunk_overlap_from_slider,
+                model_json_from_dropdown,
+                selected_library,
+                features_dict
+            )
+
+            # 3️⃣ Zmieniamy tekst na "CHUJ" po zakończeniu operacji
+            yield gr.update(value="✅ Baza danych została utworzona!", interactive=False)
+            time.sleep(2)
+            yield gr.update(value="🛠️ Utwórz nową bazę", interactive=True)
+
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`
@@ -263,9 +367,9 @@ def create_database_tab():
                 chunk_size_slider,
                 chunk_overlap_slider,
                 model_dropdown_current_choice_state,  # 👈 To zwraca `str`, ale zamienimy go na instancję
-                selected_library_state,
+                selected_library_state
             ],
-            []
+            [create_db_btn]
         )
 
     return model_dropdown_choices_state
