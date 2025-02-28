@@ -223,7 +223,7 @@ def create_database_tab():
         def update_embedding_choices(db_engine_json: str, selected_embeddings: List[str], selected_library: str, model_instance_info: str):
             if db_engine_json and db_engine_json in [db.display_name for db in DatabaseType] and selected_library and model_dropdown_current_choice_state:
                 db_type = DatabaseType.from_display_name(db_engine_json)
-                embedding_choices_database = [et.value for et in db_type.storage_supported_embeddings]
+                embedding_choices_database = [et.value for et in db_type.supported_embeddings]
                 model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_instance_info))
                 model_info_supported_embeddings: List[EmbeddingType] = model_instance.get_supported_embeddings_from_specific_library(TransformerLibrary.from_display_name(selected_library))
                 embedding_choices_model_info = [embedding.value for embedding in model_info_supported_embeddings]

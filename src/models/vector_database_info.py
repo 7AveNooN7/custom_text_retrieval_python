@@ -33,7 +33,7 @@ class VectorDatabaseInfo:
         self.files_paths: List[str] = files_paths
         self.embedding_types: List[EmbeddingType] = embedding_types
         self.transformer_library: TransformerLibrary = transformer_library
-        self._features: Dict[str, dict] = features if features is not None else {}
+        self.features: Dict[str, dict] = features if features is not None else {}
 
     string_separator = '|'
 
@@ -47,7 +47,7 @@ class VectorDatabaseInfo:
             "files_paths": self.files_paths,
             "embedding_types": [et.value for et in self.embedding_types], # Enum -> string
             "transformer_library": self.transformer_library.display_name,
-            "features": self._features
+            "features": self.features
         }
 
     @classmethod
@@ -92,7 +92,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             "files_paths": self.string_separator.join(self.files_paths),
             "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
             "transformer_library": self.transformer_library.display_name,
-            "features": self._features
+            "features": self.features
         }
 
     @classmethod

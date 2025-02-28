@@ -21,7 +21,8 @@ class DatabaseType(Enum):
         [EmbeddingType.DENSE],
         1,
         CHROMA_DB_FOLDER,
-        {}
+        {},
+        []
     )
     LANCE_DB = (
         "LanceDB",
@@ -33,7 +34,10 @@ class DatabaseType(Enum):
             DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
                 "use_tantivy": True
             }
-        }
+        },
+        [
+            [EmbeddingType.DENSE.value, DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]
+        ]
     )
 
 
@@ -44,7 +48,8 @@ class DatabaseType(Enum):
             supported_embeddings: List[EmbeddingType],
             simultaneous_embeddings: int,
             db_folder: str,
-            features: Dict[str, dict]
+            features: Dict[str, dict],
+            hybrid_search: List[List]
     ):
         self._display_name: str = display_name
         self._db_class: Type["VectorDatabaseInfo"] = db_class
@@ -52,6 +57,7 @@ class DatabaseType(Enum):
         self._simultaneous_embeddings: int = simultaneous_embeddings
         self._db_folder: str = db_folder
         self._features: Dict[str, dict] = features if features is not None else {}
+        self._hybrid_search: List[List] = hybrid_search
 
     @property
     def display_name(self) -> str:
@@ -62,7 +68,7 @@ class DatabaseType(Enum):
         return self._db_class
 
     @property
-    def storage_supported_embeddings(self) -> List[EmbeddingType]:
+    def supported_embeddings(self) -> List[EmbeddingType]:
         return self._supported_embeddings
 
     @property
@@ -78,6 +84,11 @@ class DatabaseType(Enum):
     def features(self) -> Dict[str, dict]:
         """Zwraca zbiór obsługiwanych funkcji przez bazę danych."""
         return self._features
+
+    @property
+    def hybrid_search(self) -> List[List]:
+        """Zwraca zbiór obsługiwanych funkcji przez bazę danych."""
+        return self._hybrid_search
 
     def __str__(self):
         return self.display_name
