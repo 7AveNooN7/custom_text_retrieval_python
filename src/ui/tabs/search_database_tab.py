@@ -50,6 +50,18 @@ def search_database_tab():
                 search_method_choice
             )
 
+            database_type_dropdown.change(
+                update_vectors_choices_state,
+                gr.State([]),
+                vectors_choices_state
+            )
+
+            database_type_dropdown.change(
+                update_features_choices_state,
+                gr.State([]),
+                features_choices_state
+            )
+
 
         ###################### SAVED DATABASE DROPDOWN ######################
         # STATE
@@ -60,6 +72,7 @@ def search_database_tab():
         # COMPONENT
         @gr.render(inputs=[selected_database_engine_state])
         def create_saved_database_dropdown(selected_database_engine: str):
+            print(f'changed!!!!')
             if selected_database_engine:
                 choices = fetch_saved_databases(selected_database_engine)
                 saved_database_dropdown = gr.Dropdown(
@@ -79,6 +92,18 @@ def search_database_tab():
                     update_search_method_choice,
                     gr.State(None),
                     search_method_choice
+                )
+
+                saved_database_dropdown.change(
+                    update_vectors_choices_state,
+                    gr.State([]),
+                    vectors_choices_state
+                )
+
+                saved_database_dropdown.change(
+                    update_features_choices_state,
+                    gr.State([]),
+                    features_choices_state
                 )
 
         ###################### QUERY TEXTBOX ######################
@@ -121,6 +146,34 @@ def search_database_tab():
                     [search_method_choice]
                 )
 
+                radio_buttons.change(
+                    update_search_method_choice,
+                    [radio_buttons],
+                    [search_method_choice]
+                )
+
+                radio_buttons.change(
+                    update_vectors_choices_state,
+                    [gr.State([])],
+                    [vectors_choices_state]
+                )
+
+                radio_buttons.change(
+                    update_features_choices_state,
+                    [gr.State([])],
+                    [features_choices_state]
+                )
+
+
+        ###################### SEARCH OPTIONS ######################
+
+        features_choices_state = gr.State([])
+        def update_features_choices_state(features_choices: List[str]):
+            return features_choices
+
+        vectors_choices_state = gr.State([])
+        def update_vectors_choices_state(vector_choices: List[str]):
+            return vector_choices
 
         @gr.render(inputs=[search_method_choice, selected_database_engine_state, selected_database_state])
         def create_lance_db_search_options(search_method: str, database_type: str, vector_database_instance_json: str):
@@ -148,14 +201,27 @@ def search_database_tab():
                         choices=choices
                     )
 
+                    embeddings_checkboxes.change(
+                        update_vectors_choices_state,
+                        embeddings_checkboxes,
+                        vectors_choices_state
+                    )
+
                     features_choices = []
                     if search_type == DatabaseType.LANCE_DB and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in vector_database_instance.features:
-                        features_choices.append(DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value)
+                        label_and_value = (f'{DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value} (use_tantivy={vector_database_instance.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]["use_tantivy"]})', DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value)
+                        features_choices.append(label_and_value)
 
                     if features_choices:
                         features_checkboxes = gr.CheckboxGroup(
                             label='Inne typy wyszukiwania',
                             choices=features_choices
+                        )
+
+                        features_checkboxes.change(
+                            update_features_choices_state,
+                            features_checkboxes,
+                            features_choices_state
                         )
 
 
@@ -172,21 +238,22 @@ def search_database_tab():
 
         search_btn.click(
             ui_search_database,
-            [selected_database_engine_state, selected_database_state, query_input, top_k_slider, search_method_choice],
+            [selected_database_engine_state, selected_database_state, query_input, top_k_slider, search_method_choice, vectors_choices_state, features_choices_state],
             [token_output, search_output]
         )
 
 
 
-def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str):
+def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
     retrieved_text = perform_search(
         vector_database_instance=vector_database_instance,
         search_method=search_method,
         query=query,
-        top_k=top_k
+        top_k=top_k,
+        vector_choices=vector_choices,
+        features_choices=features_choices
     )
-    print(f'retrieved_text: {retrieved_text}')
     token_count = count_tokens(retrieved_text)
     return token_count, retrieved_text

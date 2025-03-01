@@ -78,6 +78,7 @@ def save_to_database(vector_database_instance: VectorDatabaseInfo):
     embeddings: Tuple[List, List, List] = generate_embeddings(text_chunks, vector_database_instance)
     gr.Info("✅ Embeddings created!")
     vector_database_instance.create_new_database(text_chunks=text_chunks, chunks_metadata=chunks_metadata, hash_id=hash_id, embeddings=embeddings)
+    #vector_database_instance.create_new_database_test(text_chunks=text_chunks, chunks_metadata=chunks_metadata,hash_id=hash_id, embeddings=embeddings)
     gr.Info("✅ Database created!")
 
 

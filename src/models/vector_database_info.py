@@ -1,10 +1,12 @@
 import json
 import os
+import time
 from typing import List, Dict, Any, Tuple
-
+import gradio as gr
 import chromadb
 import lancedb
 from chromadb.api.types import IncludeEnum
+from lancedb.rerankers import RRFReranker
 from tqdm import tqdm
 import pyarrow as pa
 import pandas as pd
@@ -226,8 +228,10 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                     metadata_dict = json.load(f)
             except FileNotFoundError:
                 print("Plik metadata.json nie istnieje.")
+                continue
             except json.JSONDecodeError:
                 print("Błąd: Plik nie jest poprawnym JSON-em.")
+                continue
 
             lance_vector_instance = cls.from_dict(data=metadata_dict)
             database_name = lance_vector_instance.database_name
@@ -235,6 +239,33 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
 
         return saved_databases
+
+    def wait_for_creation_of_fts(self, table):
+        index_name = "text_idx"
+        POLL_INTERVAL = 5
+        while True:
+            indices = table.list_indices()
+
+            if indices and any(index.name == index_name for index in indices):
+                break
+            print(f"⏳ Waiting for {index_name} to be ready...")
+            time.sleep(POLL_INTERVAL)
+        gr.Info(message="Utworzono indeks Full-text search!")
+
+    def wait_for_index(self, table, index_name):
+        POLL_INTERVAL = 10
+        while True:
+            indices = table.list_indices()
+            print(f'indices: {indices}')
+            print(f'stats: {table.index_stats(index_name)}')
+
+            if indices and any(index.name == index_name for index in indices):
+                break
+            print(f"⏳ Waiting for {index_name} to be ready...")
+            time.sleep(POLL_INTERVAL)
+
+        print(f"✅ {index_name} is ready!")
+
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
         database_folder = self.get_database_type().db_folder
@@ -246,12 +277,10 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         for i in tqdm(range(len(text_chunks)), desc="📥 Tworzenie bazy danych"):
             all_records.append({
-                EmbeddingType.DENSE.value: embeddings[0][i],
-                #EmbeddingType.SPARSE.value: embeddings[1][i], LANCEDB NIE WSPIERA SPARSE I COLBERT BEKA
-                #EmbeddingType.COLBERT: embeddings[2][i],
                 'text': text_chunks[i],
+                EmbeddingType.DENSE.value: embeddings[0][i],
                 'source': chunks_metadata[i]['source'],
-                "fragment_id": chunks_metadata[i]["fragment_id"],
+                'fragment_id': chunks_metadata[i]["fragment_id"],
                 'hash_id': hash_id[i]
             })
 
@@ -272,7 +301,16 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         if database_name in lance_db.table_names():
             lance_db.drop_table(database_name)
-        lance_db.create_table(database_name, data=df, schema=schema)
+
+        table = lance_db.create_table(database_name, data=df, schema=schema)
+
+        from src.enums.database_type_enum import DatabaseFeature
+        if DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in self.features:
+            if self.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]['use_tantivy']:
+                table.create_fts_index("text", use_tantivy=True, tokenizer_name="en_stem")
+            else:
+                table.create_fts_index("text", use_tantivy=False, tokenizer_name="en_stem")
+                self.wait_for_index(table, f"text_idx")
 
         metadata_string = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
         with open(os.path.join(db_path, "metadata.json"), "w", encoding="utf-8") as f:
@@ -300,39 +338,75 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         return text_chunks, chunks_metadata, hash_id, (dense_embeddings, [], [])
 
-    def perform_search(self, *, query: str, top_k: int):
+    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
 
+
         transformer_library = self.transformer_library
         query_embedding: List = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
 
-        results = (
-            table.search(query_embedding, EmbeddingType.DENSE.value)
-            .limit(top_k)
-            .select(["text", "source", "fragment_id"])
-            .to_df()
-        )
+        from src.enums.database_type_enum import DatabaseFeature
+        #if EmbeddingType.DENSE in
+        if EmbeddingType.DENSE.value in vector_choices and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
+            print('HYBRID SEARCH')
+            reranker = RRFReranker()
+            results = (
+                table.search(query_type="hybrid")
+                .vector(query_embedding)
+                .text(query)
+                .limit(top_k)
+                .select(["text", "source", "fragment_id"])
+                .rerank(reranker)
+                .to_df()
+            )
+        elif EmbeddingType.DENSE.value in vector_choices:
+            print('VECTOR SEARCH')
+            # results = (
+            #     table.search(query_embedding, EmbeddingType.DENSE.value, query_type="vector")
+            #     .limit(top_k)
+            #     .select(["text", "source", "fragment_id"])
+            #     .to_df()
+            # )
+            results = (
+                table.search(query_embedding, EmbeddingType.DENSE.value, query_type="vector")
+                .limit(top_k)
+                .select(["text", "source", "fragment_id"])
+                .to_df()
+            )
+        elif DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
+            print('FTS SEARCH')
+            results = (
+                table.search(query, query_type="fts")
+                .limit(top_k)
+                .select(["text", "source", "fragment_id"])
+                .to_df()
+            )
 
-        print(f'results1: {results}')
 
-        if "score" in results.columns:
-            results = results.sort_values("score", ascending=True)
-        elif "distance" in results.columns:
-            results = results.sort_values("distance", ascending=True)
+        print(f'results.columns: {results.columns}')
+
+        if "_relevance_score" in results.columns:
+            results = results.sort_values("_relevance_score", ascending=False)
+        elif "_distance" in results.columns:
+            results = results.sort_values("_distance", ascending=True)
+        elif "_score" in results.columns:
+            results = results.sort_values("_score", ascending=False)
 
             # Budujemy odpowiedź
         response = ""
         for idx, row in results.iterrows():
-            if "_distance" in row:
+            if "_relevance_score" in row:
+                score_val = f"relevance score: {row['_relevance_score']:.4f}"
+            elif "_distance" in row:
                 score_val = f"distance: {row['_distance']:.4f}"
-            elif "score" in row:
-                score_val = f"(score: {row['score']:.4f})"
+            elif "_score" in row:
+                score_val = f"score: {row['_score']:.4f}"
             else:
                 score_val = ""
             response += (
-                f"📄 Plik: {row['source']} "
+                f"📄 File: {row['source']} "
                 f"(fragment {row['fragment_id']}, {score_val}, model: {self.embedding_model_name})\n"
                 f"{row['text']}\n\n"
             )

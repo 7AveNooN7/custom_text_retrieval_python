@@ -19,11 +19,19 @@ def get_search_type(*, search_method: str):
     # Jeśli nie znaleziono
     return None
 
-def perform_search(*, vector_database_instance: VectorDatabaseInfo, search_method: str, query: str, top_k: int):
+def perform_search(
+        *,
+        vector_database_instance: VectorDatabaseInfo,
+        search_method: str,
+        query: str,
+        top_k: int,
+        vector_choices: List[str],
+        features_choices: List[str]
+):
     search_type = get_search_type(search_method=search_method)
 
     if isinstance(search_type, DatabaseType):
-        return vector_database_instance.perform_search(query=query, top_k=top_k)
+        return vector_database_instance.perform_search(query=query, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
     elif isinstance(search_type, TransformerLibrary):
         result = vector_database_instance.retrieve_from_database()
 
@@ -34,8 +42,6 @@ def perform_search(*, vector_database_instance: VectorDatabaseInfo, search_metho
         embeddings: tuple[List, List, List] #Dense, Sparse, Colbert
 
         text_chunks, chunks_metadata, hash_id, embeddings = result
-
-        print(f'embeddings len: {len(embeddings[0])} text_chunks len: {len(text_chunks)}')
 
         return search_type.perform_search(
             text_chunks=text_chunks,
