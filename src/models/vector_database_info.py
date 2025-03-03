@@ -279,16 +279,17 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             all_records.append({
                 'text': text_chunks[i],
                 EmbeddingType.DENSE.value: embeddings[0][i],
+                EmbeddingType.COLBERT.value: embeddings[2][i],
                 'source': chunks_metadata[i]['source'],
                 'fragment_id': chunks_metadata[i]["fragment_id"],
                 'hash_id': hash_id[i]
             })
 
         # Determine embedding dimension
-        embedding_dim = len(all_records[0][EmbeddingType.DENSE.value])
+        embedding_dense_dim = len(all_records[0][EmbeddingType.DENSE.value])
         # Define schema with FixedSizeList for embedding
         schema = pa.schema([
-            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), embedding_dim)),
+            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), embedding_dense_dim)),
             pa.field("text", pa.string()),
             pa.field("source", pa.string()),
             pa.field("fragment_id", pa.int32()),
@@ -363,12 +364,6 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             )
         elif EmbeddingType.DENSE.value in vector_choices:
             print('VECTOR SEARCH')
-            # results = (
-            #     table.search(query_embedding, EmbeddingType.DENSE.value, query_type="vector")
-            #     .limit(top_k)
-            #     .select(["text", "source", "fragment_id"])
-            #     .to_df()
-            # )
             results = (
                 table.search(query_embedding, EmbeddingType.DENSE.value, query_type="vector")
                 .limit(top_k)
@@ -384,8 +379,6 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 .to_df()
             )
 
-
-        print(f'results.columns: {results.columns}')
 
         if "_relevance_score" in results.columns:
             results = results.sort_values("_relevance_score", ascending=False)

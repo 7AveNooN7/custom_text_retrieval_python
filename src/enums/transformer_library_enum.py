@@ -88,10 +88,11 @@ class TransformerLibrary(Enum):
                 selected_model_path
             )
 
-            dense_embeddings = embedding_model.encode(text_chunks).tolist()
+            dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True).tolist()
 
         elif self == TransformerLibrary.FlagEmbedding:
             embedding_model = BGEM3FlagModel(selected_model_path)
+
             generated_embeddings = embedding_model.encode(
                 sentences=text_chunks,
                 return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,

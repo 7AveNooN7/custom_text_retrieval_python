@@ -31,7 +31,6 @@ def get_downloaded_models_for_dropdown() -> List[Tuple[str, str]]:
                 except Exception as error:
                     print(f"⚠️ Błąd odczytu metadata.json w katalogu '{model_folder.name}': {error}")
 
-    print(f"Pobrane modele: {downloaded_models}")  # Debugging
     return downloaded_models
 
 def create_downloaded_model_label(model_info: DownloadedModelInfo) -> str:

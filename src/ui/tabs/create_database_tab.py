@@ -1,18 +1,11 @@
-import asyncio
 import json
 import time
-from typing import List, Literal, Tuple
-
 import gradio as gr
-from markdown_it.cli.parse import interactive
-from pypika.enums import Boolean
-
+from typing import List, Tuple
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
-from src.db_utils import get_databases_with_info, is_valid_db_name
-from src.chroma_db_utils import create_new_database_chroma_db
+from src.db_utils import is_valid_db_name
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.transformer_library_enum import TransformerLibrary
-from src.lance_db_utils import create_new_database_lance_db
 from src.embedding_model_utils import get_downloaded_models_for_dropdown
 from src.enums.database_type_enum import DatabaseType, DatabaseFeature
 from src.models.downloaded_model_info import DownloadedModelInfo
@@ -95,21 +88,35 @@ def ui_create_database(
     save_to_database(chosen_vector_database_info_instance)
     return None
 
+text_segmentation_chose = None
+
+
 
 def create_database_tab():
     with gr.Tab("📂 Tworzenie nowej bazy"):
         features_dict: dict = {}
 
-        ###################### DATABASE TYPE DROPDOWN ######################
-        selected_database_engine_state = gr.State()
+        ###################### DATABASE ENGINE TYPE DROPDOWN ######################
+        # STATE
+        selected_database_engine_state = gr.State(None)
         def change_selected_database_engine_state(db_engine: str):
             return db_engine
+
+        # COMPONENT
         @gr.render(inputs=[])
         def create_database_engine_dropdown():
+
             db_engine_dropdown = gr.Dropdown(
                 choices=[db.display_name for db in DatabaseType],
                 value=None,
                 label="Wybierz bazę wektorową"
+            )
+
+
+            db_engine_dropdown.change(
+                change_selected_database_engine_state,
+                [db_engine_dropdown],
+                [selected_database_engine_state]
             )
 
             db_engine_dropdown.change(
@@ -119,17 +126,10 @@ def create_database_tab():
             )
 
             db_engine_dropdown.change(
-                change_selected_database_engine_state,
-                [db_engine_dropdown],
-                [selected_database_engine_state]
-            )
-
-            db_engine_dropdown.change(
                 update_lance_db_fts_state,
                 [gr.State(None), gr.State(None)],
                 [lance_db_fts_state]
             )
-
 
 
         ###################### TEXTBOX ######################
@@ -143,12 +143,13 @@ def create_database_tab():
         )
 
         ###################### MODEL DROPDOWN ######################
+        # STATE
         model_dropdown_choices_state = gr.State(get_downloaded_models_for_dropdown())
         model_dropdown_current_choice_state = gr.State(None)
         def update_model_dropdown_current_choice(model_dropdown_current_choice_arg: str) -> str:
             return model_dropdown_current_choice_arg
 
-
+        # COMPONENT
         @gr.render(inputs=[model_dropdown_choices_state])
         def update_models_dropdown(model_dropdown_choices: List[Tuple[str, str]]):
             """
@@ -177,7 +178,8 @@ def create_database_tab():
                 [selected_library_state]
             )
 
-        ###################### RADIO BUTTONS ######################
+        ###################### LIBRARIES RADIO BUTTONS ######################
+        # STATE
         selected_library_state = gr.State()
         def change_selected_library_state(selected_library_state_arg):
             if selected_library_state_arg:
@@ -185,10 +187,11 @@ def create_database_tab():
             else:
                 return None
 
-
+        # COMPONENT
         @gr.render(inputs=[model_dropdown_current_choice_state, selected_database_engine_state])
-        def generate_library_checkboxes(model_dropdown_current_choice: str, selected_database_engine_state: str):
-            if model_dropdown_current_choice:
+        def generate_library_checkboxes(model_dropdown_current_choice: str, selected_database_engine: str):
+
+            if model_dropdown_current_choice and selected_database_engine:
                 model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_dropdown_current_choice))
                 radio = gr.Radio(
                     label='Wybierz bibliotekę do utworzenia embeddingów',
@@ -203,15 +206,15 @@ def create_database_tab():
                 )
 
                 radio.change(
-                    update_selected_choices,
+                    update_selected_embeddings_choices,
                     [gr.State(None), gr.Number(value=0, visible=False)],
                     [selected_embeddings_state]
                 )
 
-
         ###################### CHECKBOXES EMBEDDINGS ######################
+        # STATE
         selected_embeddings_state = gr.State([])
-        def update_selected_choices(choices: any, max_choices: int):
+        def update_selected_embeddings_choices(choices: any, max_choices: int):
             if choices:
                 if len(choices) > max_choices:
                     choices.pop(0)
@@ -219,9 +222,11 @@ def create_database_tab():
             else:
                 return []
 
+        # COMPONENT
         @gr.render(inputs=[selected_database_engine_state, selected_embeddings_state, selected_library_state, model_dropdown_current_choice_state])
         def update_embedding_choices(db_engine_json: str, selected_embeddings: List[str], selected_library: str, model_instance_info: str):
             if db_engine_json and db_engine_json in [db.display_name for db in DatabaseType] and selected_library and model_dropdown_current_choice_state:
+                print(f'WTF: {selected_embeddings}')
                 db_type = DatabaseType.from_display_name(db_engine_json)
                 embedding_choices_database = [et.value for et in db_type.supported_embeddings]
                 model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_instance_info))
@@ -240,18 +245,19 @@ def create_database_tab():
                 max_choices_input = gr.Number(value=db_type.simultaneous_embeddings, visible=False)
 
                 checkbox_group.change(
-                    update_selected_choices,
+                    update_selected_embeddings_choices,
                     inputs=[checkbox_group, max_choices_input],
                     outputs=selected_embeddings_state
                 )
 
         ###################### LANCE DB FTS ######################
+        # STATE
         lance_db_fts_state = gr.State({})
-        def update_lance_db_fts_state(create_fts: Boolean, use_tantivy: str):
+        def update_lance_db_fts_state(create_fts: bool, use_tantivy: str):
             main_key: str = DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value
             new_dict = {}
             if create_fts and use_tantivy:
-                use_tantivy_boolean: Boolean = json.loads(use_tantivy)
+                use_tantivy_boolean: bool = json.loads(use_tantivy)
                 lance_db_features: dict = DatabaseType.LANCE_DB.features
                 if create_fts:
                     new_dict = {
@@ -264,7 +270,7 @@ def create_database_tab():
                 features_dict.update(new_dict)
             return new_dict
 
-
+        # COMPONENT
         @gr.render(inputs=[selected_database_engine_state])
         def create_lance_db_fts(database_engine: str):
             if database_engine:
@@ -309,6 +315,7 @@ def create_database_tab():
                             )
 
 
+
         ###################### SLIDERS ######################
         chunk_size_slider = gr.Slider(
             1,
@@ -324,6 +331,34 @@ def create_database_tab():
             step=50,
             label="🔄 Zachodzenie bloków")
 
+        ###################### TEXT SEGMENTATION OPTIONS ######################
+        # STATE
+        text_segmentation_chose_state = gr.State(None)
+        def update_text_segmentation_chose(choice: str):
+            global text_segmentation_chose
+
+            text_segmentation_chose = choice
+            return choice
+
+
+        # COMPONENT
+        @gr.render(inputs=[])
+        def create_text_segmentation_options():
+            text_segmentation_chose_state.value = None # RESET PO RENDER
+
+            radio = gr.Radio(
+                label='Use native LanceDB implementation or Tantivy',
+                value=None,
+                choices=["Segment by characters", "Segment by tokens"]
+            )
+
+            radio.change(
+                update_text_segmentation_chose,
+                [radio],
+                [text_segmentation_chose_state]
+            )
+
+
         create_db_btn = gr.Button("🛠️ Utwórz bazę")
 
         def handle_create_db(
@@ -334,11 +369,16 @@ def create_database_tab():
                 chunk_size_from_slider: int,
                 chunk_overlap_from_slider: int,
                 model_json_from_dropdown: str,
-                selected_library: str
+                selected_library: str,
+                text_segmentation_chose_state: str
         ):
             yield gr.update(value="🚀 Tworzenie bazy danych!", interactive=False)
 
-            # 2️⃣ Wywołujemy faktyczną operację
+
+            print(f'selected_embeddings: {selected_embeddings}')
+            print(f'text_segmentation_chose_state: {text_segmentation_chose_state}')
+
+            # Wywołujemy faktyczną operację
             ui_create_database(
                 database_type_name,
                 database_name_from_textbox,
@@ -366,8 +406,9 @@ def create_database_tab():
                 file_uploader,
                 chunk_size_slider,
                 chunk_overlap_slider,
-                model_dropdown_current_choice_state,  # 👈 To zwraca `str`, ale zamienimy go na instancję
-                selected_library_state
+                model_dropdown_current_choice_state,
+                selected_library_state,
+                text_segmentation_chose_state
             ],
             [create_db_btn]
         )

@@ -72,7 +72,6 @@ def search_database_tab():
         # COMPONENT
         @gr.render(inputs=[selected_database_engine_state])
         def create_saved_database_dropdown(selected_database_engine: str):
-            print(f'changed!!!!')
             if selected_database_engine:
                 choices = fetch_saved_databases(selected_database_engine)
                 saved_database_dropdown = gr.Dropdown(
