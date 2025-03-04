@@ -3,7 +3,7 @@ import os
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import torch
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
@@ -73,16 +73,16 @@ class TransformerLibrary(Enum):
 
         return selected_model_path
 
-    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]:
+    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
         """
         Generate embeddings based on the enum type and requested embedding type.
         transformer_library: TransformerLibrary = vector_database_instance.transformer_library
         """
         list_of_embeddings_to_create = vector_database_instance.embedding_types
 
-        dense_embeddings: np.ndarray = np.ndarray([])
-        sparse_embeddings: List[dict[str, float]] = []
-        colbert_embeddings: List[np.ndarray] = []
+        dense_embeddings: Optional[np.ndarray] = None
+        sparse_embeddings: Optional[List[dict[str, float]]] = None
+        colbert_embeddings: Optional[List[np.ndarray]] = None
 
         selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
         if self == TransformerLibrary.SentenceTransformers:
@@ -102,9 +102,9 @@ class TransformerLibrary(Enum):
                 return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create
             )
 
-            dense_embeddings = generated_embeddings.get('dense_vecs', dense_embeddings)
-            sparse_embeddings = generated_embeddings.get('lexical_weights', sparse_embeddings)
-            colbert_embeddings = generated_embeddings.get('colbert_vecs', colbert_embeddings)
+            dense_embeddings = generated_embeddings.get('dense_vecs', None)
+            sparse_embeddings = generated_embeddings.get('lexical_weights', None)
+            colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
 
             print(f'dense1: {type(dense_embeddings)}')
             print(f'sparse1: {type(sparse_embeddings)}')

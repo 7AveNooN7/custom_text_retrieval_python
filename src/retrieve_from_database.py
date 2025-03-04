@@ -35,6 +35,8 @@ def perform_search(
     elif isinstance(search_type, TransformerLibrary):
         result = vector_database_instance.retrieve_from_database()
 
+
+
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
         chunks_metadata: List[dict]

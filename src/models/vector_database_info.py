@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 import time
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import gradio as gr
 import chromadb
 import lancedb
@@ -86,7 +86,6 @@ class VectorDatabaseInfo:
 
 class ChromaVectorDatabase(VectorDatabaseInfo):
 
-
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
         saved_databases = {}
@@ -133,7 +132,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             features=json.loads(metadata.get("features"))
         )
 
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
 
         database_folder = self.get_database_type().db_folder
@@ -245,7 +244,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         return saved_databases
 
 
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         def wait_for_index(target_table, index_name):
             poll_interval = 10
             while True:
@@ -441,7 +440,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             text_chunks: List[str],
             chunks_metadata: List[dict],
             hash_ids: List[str],
-            embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]
+            embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]
     ):
         def convert_sparse_to_json(sparse_dict):
             return {key: float(value) for key, value in sparse_dict.items()}  # np.float16 -> float
@@ -482,10 +481,23 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
             # Wstawianie embeddingów
             for i in tqdm(range(len(text_chunks)), desc="📥 SQLite: Tworzenie bazy danych"):
-                dense_blob = embeddings[0][i].tobytes() if embeddings[0].size > 0 else None
-                sparse_json = json.dumps(convert_sparse_to_json(embeddings[1][i])) if embeddings[1] else None
-                colbert_blob = embeddings[2][i].tobytes() if embeddings[2] else None
-                colbert_shape = json.dumps(embeddings[2][i].shape) if embeddings[2] else None
+                # Dense
+                dense_blob = None
+                if embeddings[0] is not None and embeddings[0].size > 0 and i < len(embeddings[0]):
+                    print(f"📝 Saving embedding {i}: Shape = {embeddings[0][i].shape}")  # Debugging
+                    dense_blob = embeddings[0][i].tobytes()
+
+                # Sparse
+                sparse_json = None
+                if embeddings[1] is not None and i < len(embeddings[1]):
+                    sparse_json = json.dumps(convert_sparse_to_json(embeddings[1][i]))
+
+                # ColBERT
+                colbert_blob = None
+                colbert_shape = None
+                if embeddings[2] is not None and i < len(embeddings[2]):
+                    colbert_blob = embeddings[2][i].tobytes()
+                    colbert_shape = json.dumps(embeddings[2][i].shape)
 
                 source = chunks_metadata[i]['source']
                 text = text_chunks[i]
@@ -506,14 +518,14 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             # Automatyczny commit przy wyjściu z bloku 'with'
 
     def retrieve_from_database(self) -> Tuple[List, List, List, Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]]:
-        db_path = os.path.join(self.get_database_type().db_folder, self.database_name, f'{self.database_name}.db')
+        db_path = os.path.join(self.get_database_type().db_folder, f'{self.database_name}.db')
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            # Wczytanie metadanych (opcjonalne, ale zostawiam dla spójności)
-            cursor.execute("SELECT metadata_json FROM metadata LIMIT 1")
-            metadata_row = cursor.fetchone()
-            # metadata = json.loads(metadata_row[0]) if metadata_row else {}  # Nie używamy, ale zostawiam
+            embedding_types_set = set(self.embedding_types)  # Zbiór dla O(1) lookup
+            has_dense = EmbeddingType.DENSE in embedding_types_set
+            has_sparse = EmbeddingType.SPARSE in embedding_types_set
+            has_colbert = EmbeddingType.COLBERT in embedding_types_set
 
             # Wczytanie embeddingów
             cursor.execute(f'''
@@ -525,12 +537,12 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             rows = cursor.fetchall()
 
             # Inicjalizacja list wynikowych
-            text_chunks: List[str] = []
+            text_chunks: [List[str]] = []
             chunks_metadata: List[Dict[str, str]] = []
             hash_ids: List[str] = []
-            dense_vectors_list: List[np.ndarray] = []  # Tymczasowa lista na wektory dense
-            sparse_embeddings: List[Dict[str, float]] = []
-            colbert_embeddings: List[np.ndarray] = []
+            dense_vectors_list: Optional[List[np.ndarray]] = [] if has_dense else None  # Tymczasowa lista na wektory dense
+            sparse_embeddings: Optional[List[Dict[str, float]]] = [] if has_sparse else None
+            colbert_embeddings: Optional[List[np.ndarray]] = [] if has_colbert else None
 
             # Przetwarzanie danych
             for row in rows:
@@ -547,32 +559,25 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
                 # Embeddingi z obsługą NULL
                 # Dense
-                if dense_blob is not None:
-                    dense_vector = np.frombuffer(dense_blob, dtype=np.float32)
+                if has_dense:
+                    dense_vector = np.frombuffer(dense_blob, dtype=np.float16)
+                    print(f"Dense vector shape: {dense_vector.shape}")
                     dense_vectors_list.append(dense_vector)
-                else:
-                    dense_vectors_list.append(np.zeros(dense_dim, dtype=np.float32))  # Zerowy wektor dla NULL
 
                 # Sparse
-                if sparse_json is not None:
+                if has_sparse:
                     sparse_vector = json.loads(sparse_json)  # dict
                     sparse_embeddings.append(sparse_vector)
-                else:
-                    sparse_embeddings.append(None)
 
                 # ColBERT
-                if colbert_blob is not None and colbert_shape is not None:
+                if has_colbert:
                     colbert_shape_tuple = tuple(json.loads(colbert_shape))
                     colbert_vector = np.frombuffer(colbert_blob, dtype=np.float32).reshape(colbert_shape_tuple)
                     colbert_embeddings.append(colbert_vector)
-                else:
-                    colbert_embeddings.append(None)
 
                 # Konwersja listy dense_vectors_list na np.ndarray
             if dense_vectors_list:
                 dense_embeddings = np.stack(dense_vectors_list)  # Tworzy tablicę (n, d)
-            else:
-                dense_embeddings = np.array([], dtype=np.float32)  # Pusta tablica, jeśli brak danych
 
             # Zwracanie w formacie tuple[List, List, List, tuple[List, List, List]]
             return text_chunks, chunks_metadata, hash_ids, (dense_embeddings, sparse_embeddings, colbert_embeddings)

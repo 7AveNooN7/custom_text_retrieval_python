@@ -2,7 +2,7 @@ import hashlib
 import os
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import gradio as gr
 import numpy as np
 import tiktoken
@@ -165,7 +165,7 @@ def generate_text_chunks(vector_database_instance: VectorDatabaseInfo) -> tuple[
 
     return texts, metadata, hash_id
 
-def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]:
+def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
     transformer_library: TransformerLibrary = vector_database_instance.transformer_library
     dense_embeddings, sparse_embeddings, colbert_embeddings = transformer_library.generate_embeddings(text_chunk, vector_database_instance)
     return dense_embeddings, sparse_embeddings, colbert_embeddings
@@ -174,7 +174,7 @@ def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorD
 def save_to_database(vector_database_instance: VectorDatabaseInfo):
     text_chunks, chunks_metadata, hash_id = generate_text_chunks(vector_database_instance)
     gr.Info("✅ Text Chunks created!")
-    embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]] = generate_embeddings(text_chunks, vector_database_instance)
+    embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]] = generate_embeddings(text_chunks, vector_database_instance)
     # print(f'text: {text_chunks[0]}')
     # print(f'dense: {embeddings[0][0]}\ntype: {type(embeddings[0][0])}')
     # print(f'sparse: {embeddings[1][0]}\ntype: {type(embeddings[1][0])}')
