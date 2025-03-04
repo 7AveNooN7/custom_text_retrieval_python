@@ -49,7 +49,6 @@ def ui_create_database(
         gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
     else:
-        print(f'model_json: {model_json}')
         model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_json))
 
 

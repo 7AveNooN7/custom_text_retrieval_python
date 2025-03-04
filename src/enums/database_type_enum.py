@@ -1,9 +1,11 @@
 from enum import Enum
 from typing import Type, List, Dict
 
-from src.config import CHROMA_DB_FOLDER, LANCE_DB_FOLDER
+from src.config import CHROMA_DB_FOLDER, LANCE_DB_FOLDER, SQLITE_FOLDER
 from src.enums.embedding_type_enum import EmbeddingType
-from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo
+from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo, \
+    SqliteVectorDatabase
+
 
 class DatabaseFeature(Enum):
     LANCEDB_FULL_TEXT_SEARCH = "LanceDB Full Text Search"
@@ -30,6 +32,21 @@ class DatabaseType(Enum):
         [EmbeddingType.DENSE],
         1,
         LANCE_DB_FOLDER,
+        {
+            DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
+                "use_tantivy": True
+            }
+        },
+        [
+            [EmbeddingType.DENSE.value, DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]
+        ]
+    )
+    SQLITE = (
+        "SQLite",
+        SqliteVectorDatabase,
+        [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
+        3,
+        SQLITE_FOLDER,
         {
             DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
                 "use_tantivy": True

@@ -1,10 +1,12 @@
 import json
 import os
+import sqlite3
 import time
 from typing import List, Dict, Any, Tuple
 import gradio as gr
 import chromadb
 import lancedb
+import numpy as np
 from chromadb.api.types import IncludeEnum
 from lancedb.rerankers import RRFReranker
 from tqdm import tqdm
@@ -84,18 +86,6 @@ class VectorDatabaseInfo:
 
 class ChromaVectorDatabase(VectorDatabaseInfo):
 
-    # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
-    def create_metadata_specific_for_database(self) -> dict:
-        return {
-            "database_name": self.database_name,
-            "embedding_model_name": self.embedding_model_name,
-            "chunk_size": self.chunk_size,
-            "chunk_overlap": self.chunk_overlap,
-            "files_paths": self.string_separator.join(self.files_paths),
-            "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
-            "transformer_library": self.transformer_library.display_name,
-            "features": self.features
-        }
 
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
@@ -118,9 +108,20 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         return saved_databases
 
+    def create_metadata_specific_for_database(self) -> dict:
+        return {
+            "database_name": self.database_name,
+            "embedding_model_name": self.embedding_model_name,
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "files_paths": self.string_separator.join(self.files_paths),
+            "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
+            "transformer_library": self.transformer_library.display_name,
+            "features": json.dumps(self.features)
+        }
+
     @classmethod
     def from_specific_database_metadata(cls, *, metadata: Dict):
-        print(f'tu blad: {metadata.get("embedding_types", "N/A")}')
         return cls(
             database_name=metadata.get("database_name", "N/A"),
             embedding_model_name=metadata.get("embedding_model_name", "N/A"),
@@ -128,10 +129,13 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             chunk_overlap=metadata.get("chunk_overlap", 0),
             files_paths=metadata.get("files_paths", "N/A").split(cls.string_separator),
             embedding_types=[EmbeddingType(et.strip()) for et in metadata.get("embedding_types", "N/A").split(cls.string_separator) if et],
-            transformer_library=TransformerLibrary.from_display_name(metadata.get("transformer_library", "N/A"))
+            transformer_library=TransformerLibrary.from_display_name(metadata.get("transformer_library", "N/A")),
+            features=json.loads(metadata.get("features"))
         )
 
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]):
+        # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
+
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
         chroma_client = chromadb.PersistentClient(path=db_path)
@@ -151,9 +155,9 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
 
         if text_chunks:
-            for i in tqdm(range(len(text_chunks)), desc="📥 Tworzenie bazy danych"):
+            for i in tqdm(range(len(text_chunks)), desc="📥 ChromaDB: Tworzenie bazy danych"):
                 collection.add(
-                    ids=[hash_id[i]],
+                    ids=[hash_ids[i]],
                     embeddings=[embeddings[0][i]], # MOZE PRZYJAC TYLKO DENSE
                     documents=[text_chunks[i]],
                     metadatas=[chunks_metadata[i]]
@@ -161,7 +165,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         del chroma_client
 
-    def perform_search(self, *, query: str, top_k: int):
+    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
 
@@ -240,34 +244,22 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         return saved_databases
 
-    def wait_for_creation_of_fts(self, table):
-        index_name = "text_idx"
-        POLL_INTERVAL = 5
-        while True:
-            indices = table.list_indices()
 
-            if indices and any(index.name == index_name for index in indices):
-                break
-            print(f"⏳ Waiting for {index_name} to be ready...")
-            time.sleep(POLL_INTERVAL)
-        gr.Info(message="Utworzono indeks Full-text search!")
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]):
+        def wait_for_index(target_table, index_name):
+            poll_interval = 10
+            while True:
+                indices = target_table.list_indices()
+                print(f'indices: {indices}')
+                print(f'stats: {target_table.index_stats(index_name)}')
 
-    def wait_for_index(self, table, index_name):
-        POLL_INTERVAL = 10
-        while True:
-            indices = table.list_indices()
-            print(f'indices: {indices}')
-            print(f'stats: {table.index_stats(index_name)}')
+                if indices and any(index.name == index_name for index in indices):
+                    break
+                print(f"⏳ Waiting for {index_name} to be ready...")
+                time.sleep(poll_interval)
 
-            if indices and any(index.name == index_name for index in indices):
-                break
-            print(f"⏳ Waiting for {index_name} to be ready...")
-            time.sleep(POLL_INTERVAL)
+            print(f"✅ {index_name} is ready!")
 
-        print(f"✅ {index_name} is ready!")
-
-
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: Tuple[List, List, List]):
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
         os.makedirs(db_path, exist_ok=True)
@@ -275,14 +267,13 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         all_records = []
 
-        for i in tqdm(range(len(text_chunks)), desc="📥 Tworzenie bazy danych"):
+        for i in tqdm(range(len(text_chunks)), desc="📥 LanceDB: Tworzenie bazy danych"):
             all_records.append({
                 'text': text_chunks[i],
                 EmbeddingType.DENSE.value: embeddings[0][i],
-                EmbeddingType.COLBERT.value: embeddings[2][i],
                 'source': chunks_metadata[i]['source'],
                 'fragment_id': chunks_metadata[i]["fragment_id"],
-                'hash_id': hash_id[i]
+                'hash_id': hash_ids[i]
             })
 
         # Determine embedding dimension
@@ -311,7 +302,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 table.create_fts_index("text", use_tantivy=True, tokenizer_name="en_stem")
             else:
                 table.create_fts_index("text", use_tantivy=False, tokenizer_name="en_stem")
-                self.wait_for_index(table, f"text_idx")
+                wait_for_index(table, f"text_idx")
 
         metadata_string = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
         with open(os.path.join(db_path, "metadata.json"), "w", encoding="utf-8") as f:
@@ -325,7 +316,6 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         table = lance_db.open_table(self.database_name)
 
         row_count = table.count_rows()
-        print(f'row_count: {row_count}')
         # Odczytanie danych z tabeli jako DataFrame
         df = table.to_lance().to_table().to_pandas() # BUG W LANCE DB ZE TYLKO 10 REKORDOW ZWRACA
 
@@ -404,4 +394,151 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 f"{row['text']}\n\n"
             )
         return response
+
+class SqliteVectorDatabase(VectorDatabaseInfo):
+    @classmethod
+    def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
+        # saved_databases = {}
+        # database_folder = cls.get_database_type().db_folder
+        # for db_folder_name in os.listdir(database_folder):
+        #     db_path = os.path.join(database_folder, db_folder_name)
+        #     metadata_path = os.path.join(db_path, "metadata.json")
+        #     try:
+        #         with open(metadata_path, "r", encoding="utf-8") as f:
+        #             metadata_dict = json.load(f)
+        #     except FileNotFoundError:
+        #         print("Plik metadata.json nie istnieje.")
+        #         continue
+        #     except json.JSONDecodeError:
+        #         print("Błąd: Plik nie jest poprawnym JSON-em.")
+        #         continue
+        #
+        #     lance_vector_instance = cls.from_dict(data=metadata_dict)
+        #     database_name = lance_vector_instance.database_name
+        #     saved_databases[database_name] = lance_vector_instance
+        #
+        # return saved_databases
+        return {}
+    def create_new_database(
+            self,
+            *,
+            text_chunks: List[str],
+            chunks_metadata: List[dict],
+            hash_ids: List[str],
+            embeddings: Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]
+    ):
+        def convert_sparse_to_json(sparse_dict):
+            return {key: float(value) for key, value in sparse_dict.items()}  # np.float16 -> float
+
+        print(f'dense3: {type(embeddings[0])}')
+        print(f'sparse3: {type(embeddings[1])}')
+        print(f'colbert3: {type(embeddings[2])}')
+
+        database_folder = self.get_database_type().db_folder
+        os.makedirs(database_folder, exist_ok=True)
+        db_path = os.path.join(database_folder, f"{self.database_name}.db")
+
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            # Tworzenie tabeli dla embeddingów
+            cursor.execute(f'''
+                CREATE TABLE IF NOT EXISTS {self.database_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source TEXT,
+                    text TEXT,
+                    fragment_id INT,
+                    hash_id TEXT,
+                    {EmbeddingType.DENSE.value} BLOB,
+                    {EmbeddingType.SPARSE.value} TEXT,
+                    {EmbeddingType.COLBERT.value} BLOB,
+                    {EmbeddingType.COLBERT.value}_shape TEXT
+                )
+            ''')
+
+            # Tworzenie tabeli dla metadanych
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    metadata_json TEXT
+                )
+            ''')
+
+            # Wstawianie embeddingów
+            for i in tqdm(range(len(text_chunks)), desc="📥 SQLite: Tworzenie bazy danych"):
+                dense_blob = embeddings[0][i].tobytes() if embeddings[0].size > 0 else None
+                sparse_json = json.dumps(convert_sparse_to_json(embeddings[1][i])) if embeddings[1] else None
+                colbert_blob = embeddings[2][i].tobytes() if embeddings[2] else None
+                colbert_shape = json.dumps(embeddings[2][i].shape) if embeddings[2] else None
+
+                source = chunks_metadata[i]['source']
+                text = text_chunks[i]
+                fragment_id = chunks_metadata[i]['fragment_id']
+                hash_id = hash_ids[i]
+
+                cursor.execute(f'''
+                    INSERT INTO {self.database_name} (source, text, fragment_id, hash_id, 
+                    {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
+                    {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (source, text, fragment_id, hash_id, dense_blob, sparse_json, colbert_blob, colbert_shape))
+
+            # Wstawianie metadanych po pętli
+            metadata_json = json.dumps(self.to_dict())
+            cursor.execute('INSERT INTO metadata (metadata_json) VALUES (?)', (metadata_json,))
+
+            # Automatyczny commit przy wyjściu z bloku 'with'
+
+    def retrieve_from_database(self) -> Tuple[List, List, List, Tuple[List, List, List]]:
+        db_path = os.path.join(self.get_database_type().db_folder, self.database_name, f'{self.database_name}.db')
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            # Wczytanie metadanych (opcjonalne, ale zostawiam dla spójności)
+            cursor.execute("SELECT metadata_json FROM metadata LIMIT 1")
+            metadata_row = cursor.fetchone()
+            # metadata = json.loads(metadata_row[0]) if metadata_row else {}  # Nie używamy, ale zostawiam
+
+            # Wczytanie embeddingów
+            cursor.execute(f'''
+                SELECT source, text, fragment_id, hash_id, 
+                {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
+                {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape 
+                FROM {self.database_name}
+            ''')
+            rows = cursor.fetchall()
+
+            # Inicjalizacja list wynikowych
+            text_chunks: List = []
+            chunks_metadata: List = []
+            hash_ids: List = []
+            dense_embeddings: List = []
+            sparse_embeddings: List = []
+            colbert_embeddings: List = []
+
+            # Przetwarzanie danych
+            for row in rows:
+                source, text, fragment_id, hash_id, dense_blob, sparse_json, colbert_blob, colbert_shape = row
+
+                # Tekst
+                text_chunks.append(text)
+
+                # Metadane
+                chunks_metadata.append({"source": source, "fragment_id": fragment_id})
+
+                # Hash
+                hash_ids.append(hash_id)
+
+                # Embeddingi
+                dense_vector = np.frombuffer(dense_blob, dtype=np.float32)
+                sparse_vector = json.loads(sparse_json)  # dict
+                colbert_shape = tuple(json.loads(colbert_shape))
+                colbert_vector = np.frombuffer(colbert_blob, dtype=np.float32).reshape(colbert_shape)
+
+                dense_embeddings.append(dense_vector)  # Konwersja na listę
+                sparse_embeddings.append(sparse_vector)  # Zostawiamy jako dict (można dostosować)
+                colbert_embeddings.append(colbert_vector)  # Konwersja na listę
+
+            # Zwracanie w formacie tuple[List, List, List, tuple[List, List, List]]
+            return text_chunks, chunks_metadata, hash_ids, (dense_embeddings, sparse_embeddings, colbert_embeddings)
 

@@ -15,6 +15,10 @@ os.makedirs(WEAVIATE_DB_FOLDER, exist_ok=True)
 LANCE_DB_FOLDER = os.path.join(BASE_DIR, "..", "repository", "lance_db")
 os.makedirs(LANCE_DB_FOLDER, exist_ok=True)
 
+# 📌 Ścieżka do katalogu na LanceDB
+SQLITE_FOLDER = os.path.join(BASE_DIR, "..", "repository", "sqlite_db")
+os.makedirs(SQLITE_FOLDER, exist_ok=True)
+
 # 📌 Folder cache do przechowywania/odczytu modeli w folderze `repository/downloaded_models`
 MODEL_FOLDER = os.path.join(BASE_DIR, "..", "repository", "downloaded_models")
 os.makedirs(MODEL_FOLDER, exist_ok=True)
