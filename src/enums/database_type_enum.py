@@ -19,19 +19,21 @@ class DatabaseFeature(Enum):
 class DatabaseType(Enum):
     CHROMA_DB = (
         "ChromaDB",
+        CHROMA_DB_FOLDER,
         ChromaVectorDatabase,
         [EmbeddingType.DENSE],
         1,
-        CHROMA_DB_FOLDER,
+        True,
         {},
         []
     )
     LANCE_DB = (
         "LanceDB",
+        LANCE_DB_FOLDER,
         LanceVectorDatabase,
         [EmbeddingType.DENSE],
         1,
-        LANCE_DB_FOLDER,
+        True,
         {
             DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
                 "use_tantivy": True
@@ -43,42 +45,44 @@ class DatabaseType(Enum):
     )
     SQLITE = (
         "SQLite",
+        SQLITE_FOLDER,
         SqliteVectorDatabase,
         [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT],
         3,
-        SQLITE_FOLDER,
-        {
-            DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value: {
-                "use_tantivy": True
-            }
-        },
-        [
-            [EmbeddingType.DENSE.value, DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]
-        ]
+        False,
+        {},
+        []
     )
 
 
     def __init__(
             self,
             display_name: str,
+            db_folder: str,
             db_class: Type["VectorDatabaseInfo"],
             supported_embeddings: List[EmbeddingType],
             simultaneous_embeddings: int,
-            db_folder: str,
+            database_search: bool,
             features: Dict[str, dict],
             hybrid_search: List[List]
     ):
         self._display_name: str = display_name
+        self._db_folder: str = db_folder
         self._db_class: Type["VectorDatabaseInfo"] = db_class
         self._supported_embeddings: List[EmbeddingType] = supported_embeddings
         self._simultaneous_embeddings: int = simultaneous_embeddings
-        self._db_folder: str = db_folder
+        self._database_search: bool = database_search
         self._features: Dict[str, dict] = features if features is not None else {}
         self._hybrid_search: List[List] = hybrid_search
 
     @property
     def display_name(self) -> str:
         return self._display_name
+
+    @property
+    def db_folder(self) -> str:
+        """Zwraca ścieżkę do folderu bazy danych."""
+        return self._db_folder
 
     @property
     def db_class(self) -> Type["VectorDatabaseInfo"]:
@@ -93,9 +97,8 @@ class DatabaseType(Enum):
         return self._simultaneous_embeddings
 
     @property
-    def db_folder(self) -> str:
-        """Zwraca ścieżkę do folderu bazy danych."""
-        return self._db_folder
+    def database_search(self) -> bool:
+        return self._database_search
 
     @property
     def features(self) -> Dict[str, dict]:

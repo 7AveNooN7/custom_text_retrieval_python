@@ -21,7 +21,6 @@ def count_tokens(text: str) -> int:
 # Kiedy zmienia się "search_engine_dropdown", musimy odświeżyć listę baz
 # zależnie od tego, czy to ChromaDB czy LanceDB:
 def fetch_saved_databases(database_type: str):
-    print(f'database_type: {database_type}')
     database_type = DatabaseType.from_display_name(database_type) # TRANSFORMACJA ENUM.VALUE NA CZYSTY ENUM
     saved_databases = database_type.db_class.get_saved_databases_from_drive_as_instances()
     list_of_list_of_labels_and_instances = []

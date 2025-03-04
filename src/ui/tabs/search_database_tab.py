@@ -130,8 +130,12 @@ def search_database_tab():
         def create_search_choices(database_type: str, vector_database_instance_json: str):
             if database_type and vector_database_instance_json:
                 choices: List[Tuple[str, str]] = []
-                choices.append((f'Native {database_type} search', database_type))
                 vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
+
+                if DatabaseType.from_display_name(database_type).database_search:
+                    choices.append((f'Native {database_type} search', database_type))
+
+
                 choices.append((f'{vector_database_instance.transformer_library.display_name} search', vector_database_instance.transformer_library.display_name))
                 radio_buttons = gr.Radio(
                     label='Wybierz metodę wyszukiwania',
