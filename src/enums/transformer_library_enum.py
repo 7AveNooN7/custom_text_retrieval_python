@@ -13,7 +13,6 @@ from FlagEmbedding import FlagModel, BGEM3FlagModel
 from huggingface_hub import snapshot_download
 
 
-
 class TransformerLibrary(Enum):
     FlagEmbedding = (
         "FlagEmbedding",

@@ -13,9 +13,8 @@ from tqdm import tqdm
 import pyarrow as pa
 import pandas as pd
 
-from src.config import CHROMA_DB_FOLDER
-from src.embedding_model_utils import load_embedding_model
 from src.enums.embedding_type_enum import EmbeddingType
+from src.enums.floating_precision_enum import FloatPrecisionPointEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 
 
@@ -25,6 +24,7 @@ class VectorDatabaseInfo:
             database_name: str,
             embedding_model_name: str,
             embedding_types: List[EmbeddingType],
+            float_precision: FloatPrecisionPointEnum,
             chunk_size: int, chunk_overlap: int,
             files_paths: List[str],
             transformer_library: TransformerLibrary,
@@ -36,6 +36,7 @@ class VectorDatabaseInfo:
         self.chunk_overlap: int = chunk_overlap
         self.files_paths: List[str] = files_paths
         self.embedding_types: List[EmbeddingType] = embedding_types
+        self.float_precision: FloatPrecisionPointEnum = float_precision
         self.transformer_library: TransformerLibrary = transformer_library
         self.features: Dict[str, dict] = features if features is not None else {}
 
@@ -50,6 +51,7 @@ class VectorDatabaseInfo:
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.files_paths,
             "embedding_types": [et.value for et in self.embedding_types], # Enum -> string
+            "float_precision": self.float_precision.value,
             "transformer_library": self.transformer_library.display_name,
             "features": self.features
         }
@@ -64,6 +66,7 @@ class VectorDatabaseInfo:
             chunk_overlap=data.get("chunk_overlap", 0),
             files_paths=data.get("files_paths", []),
             embedding_types=[EmbeddingType(et) for et in data.get("embedding_types", [])],  # String -> Enum
+            float_precision=FloatPrecisionPointEnum(data.get("float_precision")),
             transformer_library=TransformerLibrary.from_display_name(data.get("transformer_library")),
             features=data.get("features")
         )
@@ -115,6 +118,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.string_separator.join(self.files_paths),
             "embedding_types": self.string_separator.join(et.value for et in self.embedding_types),  # Enum -> string
+            "float_precision": self.float_precision.value,
             "transformer_library": self.transformer_library.display_name,
             "features": json.dumps(self.features)
         }
@@ -128,6 +132,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             chunk_overlap=metadata.get("chunk_overlap", 0),
             files_paths=metadata.get("files_paths", "N/A").split(cls.string_separator),
             embedding_types=[EmbeddingType(et.strip()) for et in metadata.get("embedding_types", "N/A").split(cls.string_separator) if et],
+            float_precision=FloatPrecisionPointEnum(metadata.get("float_precision")),
             transformer_library=TransformerLibrary.from_display_name(metadata.get("transformer_library", "N/A")),
             features=json.loads(metadata.get("features"))
         )
