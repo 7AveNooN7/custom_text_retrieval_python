@@ -8,10 +8,12 @@ import numpy as np
 import tiktoken
 from tqdm import tqdm
 
+from src.enums.overlap_type import OverlapTypeEnum
+from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.vector_database_info import VectorDatabaseInfo
 
-def split_text_into_chunks(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+def split_text_into_chunks_by_characters(text: str, chunk_size: int, chunk_overlap: int, overlap_type: OverlapTypeEnum) -> List[str]:
     """
     Dzieli tekst na fragmenty o określonej liczbie znaków z paskiem postępu.
 
@@ -34,57 +36,144 @@ def split_text_into_chunks(text: str, chunk_size: int, chunk_overlap: int) -> Li
     return chunks
 
 
-def split_text_into_chunks1(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+def split_text_into_chunks_by_whole_sentences(text: str, chunk_size: int, chunk_overlap: int, overlaptype: OverlapTypeEnum) -> List[str]:
     """
-    Dzieli tekst na fragmenty zawierające pełne zdania, wykorzystując regex do detekcji końców zdań.
+    Dzieli tekst na fragmenty z bazową długością chunk_size - chunk_overlap*2 (środkowe),
+    chunk_size - chunk_overlap (pierwszy i ostatni), zachowując pełne zdania.
+    Overlap "od góry" i "od dołu" jest bliski chunk_overlap, z możliwością przekroczenia o 1 zdanie.
 
     :param text: Tekst wejściowy.
-    :param chunk_size: Maksymalna liczba znaków w fragmencie.
-    :param chunk_overlap: Nakładanie się fragmentów w znakach.
+    :param chunk_size: Orientacyjna maksymalna liczba znaków w fragmencie (wliczając spacje).
+    :param chunk_overlap: Orientacyjna liczba znaków nakładania się fragmentów.
     :return: Lista fragmentów tekstu.
     """
     if chunk_overlap >= chunk_size:
         raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
+    if chunk_size - chunk_overlap * 2 <= 0:
+        raise ValueError("chunk_size - chunk_overlap * 2 musi być większe od 0!")
 
-    # Podział na zdania za pomocą regexu (obsługa . ! ? jako końce zdań)
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    # Podział na zdania
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if not sentences[-1].endswith(('.', '!', '?')):
+        sentences[-1] += '.'
 
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    overlap_sentences = []
-    overlap_length = 0  # Dokładna długość overlapu
+    total_sentences_count = len(sentences)  # Całkowita liczba zdań w tekście
 
-    for sentence in tqdm(sentences, desc="Tworzenie chunków", unit="chunk"):
-        sentence_length = len(sentence)
+    final_chunks = []
 
-        if current_length + sentence_length > chunk_size:
-            # Dodanie dokładnego overlapu (sumujemy zdania do chunk_overlap znaków)
-            if chunk_overlap > 0:
-                overlap_sentences = []
+    if overlaptype == OverlapTypeEnum.DOUBLE:
+        # Tryb 1: Double overlap "od góry i od dołu"
+        # Krok 1: Tworzenie bazowych fragmentów
+        base_chunks = []  # Lista, która będzie przechowywać wszystkie bazowe fragmenty
+        current_chunk = []  # Aktualny fragment, do którego dodajemy zdania
+        current_length = 0  # Aktualna długość current_chunk w znakach (z uwzględnieniem spacji)
+        sentence_index = 0  # Indeks bieżącego zdania w liście sentences
+        max_length = chunk_size - chunk_overlap if total_sentences_count > 1 else chunk_size
+
+        while not base_chunks:
+            sentence = sentences[sentence_index]
+            sentence_length = len(sentence)
+            overall_length = sentence_length + (1 if current_chunk else 0)
+
+            if current_length + overall_length > max_length and current_chunk:
+                # JEŻELI DLUGOSC TEKSTU W CURRENT CHUNK PRZEKROCZY ZADANY LIMIT
+                # TO ZAPISUJE LISTE STRINGOW W CURRENT_CHUNK DO BASE_CHUNKS [List[List[str]]]
+                base_chunks.append(current_chunk)
+
+                # AKUTALNE ZDANIE NIE ZOSTANIE JUZ DODANE DO CURRENT_CHUNK, WIEC TRZEBA JUZ JE DODAC PRZED NASTEPNA ITERACJA
+                current_chunk = [sentence]
+                current_length = sentence_length
+            else:
+                current_chunk.append(sentence)
+                current_length += overall_length
+
+            sentence_index += 1
+
+        max_length = chunk_size - chunk_overlap * 2
+
+        while sentence_index < total_sentences_count:
+            sentence = sentences[sentence_index]
+            sentence_length = len(sentence)
+            overall_length = sentence_length + (1 if current_chunk else 0)
+
+            if current_length + overall_length > max_length and current_chunk:
+                # JEŻELI DLUGOSC TEKSTU W CURRENT CHUNK PRZEKROCZY ZADANY LIMIT
+                # TO ZAPISUJE LISTE STRINGOW W CURRENT_CHUNK DO BASE_CHUNKS [List[List[str]]]
+                base_chunks.append(current_chunk)
+
+                # AKUTALNE ZDANIE NIE ZOSTANIE JUZ DODANE DO CURRENT_CHUNK, WIEC TRZEBA JUZ JE DODAC PRZED NASTEPNA ITERACJA
+                current_chunk = [sentence]
+                current_length = sentence_length
+            else:
+                current_chunk.append(sentence)
+                current_length += overall_length
+
+            sentence_index += 1
+
+        if current_chunk:
+            base_chunks.append(current_chunk)
+
+        # Krok 2: Dodawanie overlapu "od góry" i "od dołu"
+        final_chunks = []
+        for i, chunk in enumerate(tqdm(base_chunks, desc="Dodawanie overlapu", unit="chunk")):
+            overlap_top = []
+            overlap_bottom = []
+
+            # Overlap "od góry" (zbliżony do chunk_overlap, max +1 zdanie)
+            if i > 0:
+                prev_chunk = base_chunks[i - 1]
                 overlap_length = 0
-                for s in reversed(current_chunk):  # Przechodzimy od końca chunka
-                    if overlap_length + len(s) > chunk_overlap:
+                for sentence in reversed(prev_chunk):
+                    s_length = len(sentence) + (1 if overlap_top else 0)
+                    if overlap_length + s_length > chunk_overlap and overlap_length > 0:
                         break
-                    overlap_sentences.insert(0, s)  # Dodajemy na początek (kolejność ma znaczenie)
-                    overlap_length += len(s)
+                    overlap_top.insert(0, sentence)
+                    overlap_length += s_length
 
-            # Zapisujemy aktualny chunk
-            chunks.append(" ".join(current_chunk))
+            # Overlap "od dołu" (zbliżony do chunk_overlap, max +1 zdanie)
+            if i < len(base_chunks) - 1:
+                next_chunk = base_chunks[i + 1]
+                overlap_length = 0
+                for sentence in next_chunk:
+                    s_length = len(sentence) + (1 if overlap_bottom else 0)
+                    if overlap_length + s_length > chunk_overlap and overlap_length > 0:
+                        break
+                    overlap_bottom.append(sentence)
+                    overlap_length += s_length
 
-            # Resetujemy nowy chunk, startując od overlapu
-            current_chunk = overlap_sentences.copy()
-            current_length = overlap_length
+            # Łączenie: overlap_top + chunk + overlap_bottom
+            final_chunk = overlap_top + chunk + overlap_bottom
+            final_chunks.append(" ".join(final_chunk))
+    elif overlaptype == OverlapTypeEnum.SLIDING_WINDOW:
+        # Tryb 2: Sliding window z overlapem "od góry"
+        final_chunks = []
+        current_chunk = []
+        current_length = 0
+        sentence_index = 0
+        while sentence_index < total_sentences_count:
+            sentence = sentences[sentence_index]
+            sentence_length = len(sentence)
+            overall_length = sentence_length + (1 if current_chunk else 0)
+            if current_length + overall_length > chunk_size and current_chunk:
+                final_chunks.append(" ".join(current_chunk))
+                # Przesuwamy okno: bierzemy zdania z końca poprzedniego fragmentu jako overlap
+                overlap_length = 0
+                overlap_sentences = []
+                for s in reversed(current_chunk):
+                    s_length = len(s) + (1 if overlap_sentences else 0)
+                    if overlap_length + s_length > chunk_overlap and overlap_length > 0:
+                        break
+                    overlap_sentences.insert(0, s)
+                    overlap_length += s_length
+                current_chunk = overlap_sentences
+                current_length = overlap_length
+            current_chunk.append(sentence)
+            current_length += overall_length
+            sentence_index += 1
+        if current_chunk:
+            final_chunks.append(" ".join(current_chunk))
 
-        # Dodajemy zdanie do aktualnego chunka
-        current_chunk.append(sentence)
-        current_length += sentence_length
-
-    # Dodanie ostatniego chunka
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-
-    return chunks
+    return final_chunks
 
 
 def split_text_into_token_chunks(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
@@ -126,12 +215,28 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo):
         with open(file_path, "r", encoding="utf-8") as f:
             whole_text_from_file = f.read()
 
-        # Dzielenie tekstu na fragmenty
-        chunks = split_text_into_chunks1(
-            whole_text_from_file,
-            vector_database_instance.chunk_size,
-            vector_database_instance.chunk_overlap
-        )
+        if vector_database_instance.segmentation_type == TextSegmentationTypeEnum.CHARACTERS:
+            if vector_database_instance.preserve_whole_sentences:
+                # Dzielenie tekstu na fragmenty z zachowaniem całych zdań
+                chunks = split_text_into_chunks_by_whole_sentences(
+                    whole_text_from_file,
+                    vector_database_instance.chunk_size,
+                    vector_database_instance.chunk_overlap,
+                    vector_database_instance.overlap_type
+                )
+            else:
+                chunks = split_text_into_chunks_by_characters(
+                    whole_text_from_file,
+                    vector_database_instance.chunk_size,
+                    vector_database_instance.chunk_overlap,
+                    vector_database_instance.overlap_type
+                )
+        else:
+            chunks = split_text_into_token_chunks(
+                whole_text_from_file,
+                vector_database_instance.chunk_size,
+                vector_database_instance.chunk_overlap
+            )
 
         # Tworzenie fragmentów i metadanych
         for chunk_index, chunk in enumerate(chunks):

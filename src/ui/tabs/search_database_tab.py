@@ -230,10 +230,19 @@ def search_database_tab():
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
-        token_output = gr.Textbox(
-            label="Liczba tokenów:",
-            interactive=False
-        )
+        with gr.Row():
+
+            token_output = gr.Number(
+                label="Token count:",
+                interactive=False
+            )
+
+            characters_output = gr.Number(
+                label="Characters count:",
+                interactive=False
+            )
+
+
         search_output = gr.Textbox(
             label="Wyniki wyszukiwania:",
             interactive=False
@@ -242,9 +251,8 @@ def search_database_tab():
         search_btn.click(
             ui_search_database,
             [selected_database_engine_state, selected_database_state, query_input, top_k_slider, search_method_choice, vectors_choices_state, features_choices_state],
-            [token_output, search_output]
+            [token_output, characters_output, search_output]
         )
-
 
 
 def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
@@ -259,4 +267,5 @@ def ui_search_database(database_type: str, vector_database_instance_json: str, q
         features_choices=features_choices
     )
     token_count = count_tokens(retrieved_text)
-    return token_count, retrieved_text
+    characters_output = len(retrieved_text)
+    return token_count, characters_output, retrieved_text

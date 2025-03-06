@@ -12,6 +12,8 @@ from src.enums.embedding_type_enum import EmbeddingType
 from FlagEmbedding import FlagModel, BGEM3FlagModel
 from huggingface_hub import snapshot_download
 
+from src.enums.floating_precision_enum import FloatPrecisionPointEnum
+
 
 class TransformerLibrary(Enum):
     FlagEmbedding = (
@@ -85,14 +87,19 @@ class TransformerLibrary(Enum):
 
         selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
         if self == TransformerLibrary.SentenceTransformers:
-            embedding_model = SentenceTransformer(
-                selected_model_path
-            ).half()
+            if vector_database_instance.float_precision == FloatPrecisionPointEnum.FP32:
+                embedding_model = SentenceTransformer(
+                    selected_model_path
+                )
+            elif vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16:
+                embedding_model = SentenceTransformer(
+                    selected_model_path
+                ).half()
 
             dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True, convert_to_numpy=True)
 
         elif self == TransformerLibrary.FlagEmbedding:
-            embedding_model = BGEM3FlagModel(selected_model_path, use_fp16=True)
+            embedding_model = BGEM3FlagModel(selected_model_path, use_fp16=(vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16))
 
             generated_embeddings = embedding_model.encode(
                 sentences=text_chunks,

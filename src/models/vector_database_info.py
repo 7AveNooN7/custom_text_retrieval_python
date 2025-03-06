@@ -15,6 +15,8 @@ import pandas as pd
 
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.enums.overlap_type import OverlapTypeEnum
+from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 
 
@@ -25,13 +27,20 @@ class VectorDatabaseInfo:
             embedding_model_name: str,
             embedding_types: List[EmbeddingType],
             float_precision: FloatPrecisionPointEnum,
-            chunk_size: int, chunk_overlap: int,
+            segmentation_type: TextSegmentationTypeEnum,
+            preserve_whole_sentences: bool,
+            overlap_type: OverlapTypeEnum,
+            chunk_size: int,
+            chunk_overlap: int,
             files_paths: List[str],
             transformer_library: TransformerLibrary,
             features: Dict[str, dict] = None
     ):
         self.database_name: str = database_name
         self.embedding_model_name: str = embedding_model_name
+        self.segmentation_type: TextSegmentationTypeEnum = segmentation_type
+        self.preserve_whole_sentences: bool = preserve_whole_sentences
+        self.overlap_type: OverlapTypeEnum = overlap_type
         self.chunk_size: int = chunk_size
         self.chunk_overlap: int = chunk_overlap
         self.files_paths: List[str] = files_paths
@@ -47,6 +56,9 @@ class VectorDatabaseInfo:
         return {
             "database_name": self.database_name,
             "embedding_model_name": self.embedding_model_name,
+            "segmentation_type": self.segmentation_type.value,
+            "preserve_whole_sentences": json.dumps(self.preserve_whole_sentences),
+            "overlap_type": self.overlap_type.value,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.files_paths,
@@ -62,6 +74,9 @@ class VectorDatabaseInfo:
         return cls(
             database_name=data.get("database_name", "N/A"),
             embedding_model_name=data.get("embedding_model_name", "N/A"),
+            segmentation_type=TextSegmentationTypeEnum(data.get("segmentation_type")),
+            preserve_whole_sentences=json.loads(data.get("preserve_whole_sentences")),
+            overlap_type=OverlapTypeEnum(data.get("overlap_type")),
             chunk_size=data.get("chunk_size", 0),
             chunk_overlap=data.get("chunk_overlap", 0),
             files_paths=data.get("files_paths", []),
@@ -114,6 +129,9 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         return {
             "database_name": self.database_name,
             "embedding_model_name": self.embedding_model_name,
+            "segmentation_type": self.segmentation_type.value,
+            "preserve_whole_sentences": json.dumps(self.preserve_whole_sentences),
+            "overlap_type": self.overlap_type.value,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "files_paths": self.string_separator.join(self.files_paths),
@@ -128,6 +146,9 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         return cls(
             database_name=metadata.get("database_name", "N/A"),
             embedding_model_name=metadata.get("embedding_model_name", "N/A"),
+            segmentation_type=TextSegmentationTypeEnum(metadata.get("segmentation_type")),
+            preserve_whole_sentences=json.loads(metadata.get("preserve_whole_sentences")),
+            overlap_type=OverlapTypeEnum(metadata.get("overlap_type")),
             chunk_size=metadata.get("chunk_size", 0),
             chunk_overlap=metadata.get("chunk_overlap", 0),
             files_paths=metadata.get("files_paths", "N/A").split(cls.string_separator),

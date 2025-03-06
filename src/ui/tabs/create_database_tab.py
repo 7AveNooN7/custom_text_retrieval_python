@@ -6,6 +6,7 @@ from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.db_utils import is_valid_db_name
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.embedding_model_utils import get_downloaded_models_for_dropdown
@@ -90,7 +91,7 @@ def create_database_tab():
                 db_engine_dropdown = gr.Dropdown(
                     choices=[db.display_name for db in DatabaseType],
                     value=None,
-                    label="Select a database engine",
+                    label="Database engine",
                     scale=1
                 )
 
@@ -138,7 +139,7 @@ def create_database_tab():
                 model_dropdown = gr.Dropdown(
                     choices=model_dropdown_choices,  # Tuple (model_label, json)
                     value=None,
-                    label="🧠 Select an Embedding Model",
+                    label="🧠 Embedding Model",
                     scale=2
                 )
 
@@ -156,7 +157,7 @@ def create_database_tab():
                 )
 
                 floating_point_precision_radio = gr.Radio(
-                    label='Select floating-point precision',
+                    label='Floating-point precision',
                     value=FloatPrecisionPointEnum.FP16.value,
                     choices=[fp.value for fp in FloatPrecisionPointEnum]
                 )
@@ -327,12 +328,31 @@ def create_database_tab():
                     step=50,
                     label="🔄 Chunk overlap")
 
-                segmentation_type_radio = gr.Radio(
-                    label='✂️ Select text segmentation type',
-                    value=TextSegmentationTypeEnum.TOKENS.value,
-                    choices=[ts.value for ts in TextSegmentationTypeEnum],
-                    interactive=True
-                )
+                with gr.Row(
+                    variant='compact',
+                    equal_height=True
+                ):
+
+                    segmentation_type_radio = gr.Radio(
+                        label='✂️ Text segmentation type',
+                        value=TextSegmentationTypeEnum.TOKENS.value,
+                        choices=[ts.value for ts in TextSegmentationTypeEnum],
+                        interactive=True
+                    )
+
+                    preserve_whole_sentences_radio = gr.Radio(
+                        label='✂️ Preserve full sentences',
+                        value=json.dumps(True),
+                        choices=[('Yes', json.dumps(True)), ('No', json.dumps(False))],
+                        interactive=True
+                    )
+
+                    overlap_type_radio = gr.Radio(
+                        label='✂️ Overlap type',
+                        value=OverlapTypeEnum.SLIDING_WINDOW.value,
+                        choices=[ov.value for ov in OverlapTypeEnum],
+                        interactive=True
+                    )
 
         create_db_btn = gr.Button("🛠️ Create a new database")
 
@@ -344,11 +364,13 @@ def create_database_tab():
                 selected_embeddings_state,
                 floating_point_precision_state,
                 file_uploader,
+                segmentation_type_radio,
+                preserve_whole_sentences_radio,
+                overlap_type_radio,
                 chunk_size_slider,
                 chunk_overlap_slider,
                 model_dropdown_current_choice_state,
                 selected_library_state,
-                segmentation_type_radio,
                 features_state
             ],
             [create_db_btn]
@@ -363,11 +385,13 @@ def handle_create_db(
         selected_embeddings: List[str],
         floating_point_precision: str,
         files_from_uploader: List[str],
+        segmentation_type: str,
+        preserve_whole_sentences: str,
+        overlap_type: str,
         chunk_size_from_slider: int,
         chunk_overlap_from_slider: int,
         model_json_from_dropdown: str,
         selected_library: str,
-        segmentation_type: str,
         features: str
 ):
     yield gr.update(value="🚀 Tworzenie bazy danych!", interactive=False)
@@ -379,11 +403,13 @@ def handle_create_db(
         selected_embeddings=selected_embeddings,
         floating_point_precision=floating_point_precision,
         files_from_uploader=files_from_uploader,
+        segmentation_type=segmentation_type,
+        preserve_whole_sentences=json.loads(preserve_whole_sentences),
+        overlap_type=overlap_type,
         chunk_size_from_slider=chunk_size_from_slider,
         chunk_overlap_from_slider=chunk_overlap_from_slider,
         model_json=model_json_from_dropdown,
         selected_library=selected_library,
-        segmentation_type=segmentation_type,
         features_dict=json.loads(features)  # Zmienna "globalna"
     )
 
@@ -399,11 +425,13 @@ def ui_create_database(
         selected_embeddings: List[str],
         floating_point_precision: str,
         files_from_uploader: List[str],
+        segmentation_type: str,
+        preserve_whole_sentences: bool,
+        overlap_type: str,
         chunk_size_from_slider: int,
         chunk_overlap_from_slider: int,
         model_json: str,
         selected_library: str,
-        segmentation_type: str,
         features_dict: dict
 ):
     """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
@@ -446,6 +474,9 @@ def ui_create_database(
     chosen_vector_database_info_instance = db_engine_enum.db_class(
         database_name=db_name_from_textbox,
         embedding_model_name=model_instance.model_name,
+        segmentation_type=TextSegmentationTypeEnum(segmentation_type),
+        preserve_whole_sentences=preserve_whole_sentences,
+        overlap_type=OverlapTypeEnum(overlap_type),
         chunk_size=chunk_size_from_slider,
         chunk_overlap=chunk_overlap_from_slider,
         files_paths=files_from_uploader,
@@ -470,6 +501,7 @@ def ui_create_database(
 
     save_to_database(chosen_vector_database_info_instance)
     return None
+
 
 def get_waiting_css_with_custom_text(*, text):
     return f"""
