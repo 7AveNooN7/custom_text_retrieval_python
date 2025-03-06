@@ -1,7 +1,7 @@
 import json
 import time
 import gradio as gr
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 from src.db_utils import is_valid_db_name
 from src.enums.embedding_type_enum import EmbeddingType
@@ -14,95 +14,70 @@ from src.models.downloaded_model_info import DownloadedModelInfo
 from src.save_to_database import save_to_database
 
 
-def ui_create_database(
-        db_engine_from_dropdown: str,
-        db_name_from_textbox: str,
-        selected_embeddings: List[str],
-        files_from_uploader: List[str],
-        chunk_size_from_slider: int,
-        chunk_overlap_from_slider: int,
-        model_json: str,
-        selected_library: str,
-        features_dict: dict
-):
-    """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
-    # Walidacja nazwy bazy
-    any_error = False
-    if not db_engine_from_dropdown:
-        gr.Warning(f"❌ Nie wybrano silnika bazy danych!")
-        any_error = True
-    else:
-        db_engine_enum = DatabaseType.from_display_name(db_engine_from_dropdown)
-
-    if not db_name_from_textbox:
-        gr.Warning(f"❌ Nie podano nazwy bazy danych!")
-        any_error = True
-    else:
-        if not is_valid_db_name(db_name_from_textbox):
-            gr.Warning(f"❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki.")
-            any_error = True
-
-    if not files_from_uploader or len(files_from_uploader) == 0:
-        gr.Warning(f"❌ Nie wybrano żadnego pliku do utworzenia bazy danych!")
-        any_error = True
-
-
-    if not model_json:
-        gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
-        any_error = True
-    else:
-        model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_json))
-
-
-    if not selected_library:
-        gr.Warning(f"❌ Nie wyrabo żadnego typu embeddingów!")
-        any_error = True
-
-
-    if any_error:
-        return None
-
-    chosen_vector_database_info_instance = db_engine_enum.db_class(
-        database_name=db_name_from_textbox,
-        embedding_model_name=model_instance.model_name,
-        chunk_size=chunk_size_from_slider,
-        chunk_overlap=chunk_overlap_from_slider,
-        files_paths=files_from_uploader,
-        embedding_types=[EmbeddingType(choice) for choice in selected_embeddings],
-        transformer_library=TransformerLibrary.from_display_name(selected_library),
-        features=features_dict
-    )
-
-    max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
-    if len(chosen_vector_database_info_instance.embedding_types) > max_embeddings_count:
-        gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
-        return None
-
-    saved_databases_dict: dict = chosen_vector_database_info_instance.get_saved_databases_from_drive_as_instances()
-    saved_database_list = list(saved_databases_dict.keys())
-
-    if db_name_from_textbox in saved_database_list:
-        gr.Warning(f"❌ Już istnieje baza danych o takiej nazwie!")
-        return None
-
-
-    save_to_database(chosen_vector_database_info_instance)
-    return None
-
-text_segmentation_chose = None
-
-
-
 def create_database_tab():
     with gr.Tab("📂 Create new database"):
         features_dict: dict = {}
 
-        ###################### DATABASE ENGINE TYPE DROPDOWN ######################
-        # STATE
+        ################  database_engine_dropdown STATE ################
         selected_database_engine_state = gr.State(None)
-        def change_selected_database_engine_state(db_engine: str):
+        def update_selected_database_engine_state(db_engine: str):
             return db_engine
 
+        ################  model_dropdown_state STATE ################
+        model_dropdown_choices_state = gr.State(get_downloaded_models_for_dropdown()) # STATE
+        model_dropdown_current_choice_state = gr.State(None) # STATE
+        def update_model_dropdown_current_choice(model_dropdown_current_choice_arg: str) -> str: # UPDATE
+            return model_dropdown_current_choice_arg
+
+        ################ embedding_libraries_state STATE ################
+        # STATE
+        selected_library_state = gr.State()
+        # UPDATE
+        def change_selected_library_state(selected_library_state_arg):
+            if selected_library_state_arg:
+                return selected_library_state_arg
+            else:
+                return None
+
+        ################  selected_embeddings STATE ################
+        # STATE
+        selected_embeddings_state = gr.State([])
+        # UPDATE
+        def update_selected_embeddings_choices(choices: any, max_choices: int):
+            if choices:
+                if len(choices) > max_choices:
+                    choices.pop(0)
+                return choices
+            else:
+                return []
+
+        ################  lance_db_fts STATE ################
+        # STATE
+        features_state = gr.State("{}")
+        # UPDATE WITH LANCE_DB_FTS_CONTEXT
+        def update_features_state_in_lance_db_fts_context(create_fts: Optional[bool], use_tantivy: Optional[str], state: str):
+            main_key: str = DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value
+            lance_db_features: dict = DatabaseType.LANCE_DB.features
+            features_state_dict = json.loads(state)
+
+            if create_fts:
+                use_tantivy_boolean: Optional[bool] = json.loads(use_tantivy)
+                features_state_dict[main_key] = lance_db_features.get(main_key)
+                features_state_dict[main_key]["use_tantivy"] = use_tantivy_boolean
+            else:
+                features_state_dict.pop(main_key, None)
+
+            return json.dumps(features_state_dict)
+
+        ################  floating_point_precision STATE ################
+        # STATE
+        floating_point_precision_state = gr.State(FloatPrecisionPointEnum.FP16.value)
+        # UPDATE
+        def update_floating_point_precision_state(floating_point_precision: str):
+            return floating_point_precision
+
+
+        ###################### FIRST ROW (DB ENGINE + DB NAME) ######################
         with gr.Row(
             variant='compact',
             equal_height=True
@@ -110,7 +85,8 @@ def create_database_tab():
             # COMPONENT
             @gr.render(inputs=[])
             def create_database_engine_dropdown():
-
+                ###################### DB ENGINE ######################
+                # COMPONENT
                 db_engine_dropdown = gr.Dropdown(
                     choices=[db.display_name for db in DatabaseType],
                     value=None,
@@ -120,7 +96,7 @@ def create_database_tab():
 
                 # ZMIENIA STAN SAMEGO SIEBIE
                 db_engine_dropdown.change(
-                    change_selected_database_engine_state,
+                    update_selected_database_engine_state,
                     [db_engine_dropdown],
                     [selected_database_engine_state]
                 )
@@ -133,9 +109,9 @@ def create_database_tab():
                 )
 
                 db_engine_dropdown.change(
-                    update_lance_db_fts_state,
-                    [gr.State(None), gr.State(None)],
-                    [lance_db_fts_state]
+                    update_features_state_in_lance_db_fts_context,
+                    [gr.State(None), gr.State(None), features_state],
+                    [features_state]
                 )
 
 
@@ -143,13 +119,7 @@ def create_database_tab():
             db_name_input = gr.Textbox(label="🆕 New database name", scale=2)
 
 
-
         ###################### MODEL DROPDOWN ######################
-        # STATE
-        model_dropdown_choices_state = gr.State(get_downloaded_models_for_dropdown())
-        model_dropdown_current_choice_state = gr.State(None)
-        def update_model_dropdown_current_choice(model_dropdown_current_choice_arg: str) -> str:
-            return model_dropdown_current_choice_arg
 
         # COMPONENT
         @gr.render(inputs=[model_dropdown_choices_state]) # TO SIE ZMIENIA TYLKO NA POCZATKU
@@ -172,51 +142,33 @@ def create_database_tab():
                     scale=2
                 )
 
-                radio = gr.Radio(
+                model_dropdown.change(
+                    update_model_dropdown_current_choice,
+                    [model_dropdown],
+                    [model_dropdown_current_choice_state]
+                )
+
+                # PRZY ZMIANIE MODELU ZERUJE LIBRARY_STATE
+                model_dropdown.change(
+                    change_selected_library_state,
+                    [gr.State(None)],
+                    [selected_library_state]
+                )
+
+                floating_point_precision_radio = gr.Radio(
                     label='Select floating-point precision',
                     value=FloatPrecisionPointEnum.FP16.value,
                     choices=[fp.value for fp in FloatPrecisionPointEnum]
                 )
 
-            radio.change(
-                update_text_segmentation_chose,
-                [radio],
-                [text_segmentation_chose_state]
-            )
+                floating_point_precision_radio.change(
+                    update_floating_point_precision_state,
+                    [floating_point_precision_radio],
+                    [floating_point_precision_state]
+                )
 
-            model_dropdown.change(
-                update_model_dropdown_current_choice,
-                [model_dropdown],
-                [model_dropdown_current_choice_state]
-            )
-
-            # PRZY ZMIANIE MODELU ZERUJE LIBRARY_STATE
-            model_dropdown.change(
-                change_selected_library_state,
-                [gr.State(None)],
-                [selected_library_state]
-            )
-
-        # LIBRARIES RADIO BUTTONS STATE
-        selected_library_state = gr.State()
-        def change_selected_library_state(selected_library_state_arg):
-            if selected_library_state_arg:
-                return selected_library_state_arg
-            else:
-                return None
 
         ###################### CHECKBOXES EMBEDDINGS ######################
-        # STATE
-        selected_embeddings_state = gr.State([])
-        def update_selected_embeddings_choices(choices: any, max_choices: int):
-            if choices:
-                if len(choices) > max_choices:
-                    choices.pop(0)
-                return choices
-            else:
-                return []
-
-
         with gr.Row(
             equal_height=True,
             variant='compact',
@@ -298,29 +250,7 @@ def create_database_tab():
                                 render=True, padding=False)
 
 
-
-
         ###################### LANCE DB FTS ######################
-        # STATE
-        lance_db_fts_state = gr.State({})
-        def update_lance_db_fts_state(create_fts: bool, use_tantivy: str):
-            main_key: str = DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value
-            new_dict = {}
-            if create_fts and use_tantivy:
-                use_tantivy_boolean: bool = json.loads(use_tantivy)
-                lance_db_features: dict = DatabaseType.LANCE_DB.features
-                if create_fts:
-                    new_dict = {
-                        main_key: lance_db_features.get(main_key)
-                    }
-                    new_dict[main_key]["use_tantivy"] = use_tantivy_boolean
-            if not new_dict:
-                features_dict.pop(main_key, None)
-            else:
-                features_dict.update(new_dict)
-            return new_dict
-
-        # COMPONENT
         @gr.render(inputs=[selected_database_engine_state])
         def create_lance_db_fts(database_engine: str):
             if database_engine:
@@ -345,23 +275,23 @@ def create_database_tab():
                             ]
 
                             use_tantivy_from_enum = database_features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]["use_tantivy"]
-                            radio = gr.Radio(
+                            lance_db_radio = gr.Radio(
                                 show_label=False,
                                 info='Use native LanceDB implementation or Tantivy',
                                 value=json.dumps(use_tantivy_from_enum),
                                 choices=radio_choices
                             )
 
-                            radio.change(
-                                update_lance_db_fts_state,
-                                [checkbox, radio],
-                                lance_db_fts_state
+                            lance_db_radio.change(
+                                update_features_state_in_lance_db_fts_context,
+                                [checkbox, lance_db_radio, features_state],
+                                features_state
                             )
 
                             checkbox.change(
-                                update_lance_db_fts_state,
-                                [checkbox, radio],
-                                lance_db_fts_state
+                                update_features_state_in_lance_db_fts_context,
+                                [checkbox, lance_db_radio, features_state],
+                                features_state
                             )
                 else:
                     #gr.HTML("create_lance_db_fts", visible=True, render=False, padding=False)
@@ -404,52 +334,7 @@ def create_database_tab():
                     interactive=True
                 )
 
-
-        ###################### TEXT SEGMENTATION OPTIONS ######################
-        # STATE
-        text_segmentation_chose_state = gr.State(FloatPrecisionPointEnum.FP16.value)
-        def update_text_segmentation_chose(choice: str):
-            return choice
-
-
-
         create_db_btn = gr.Button("🛠️ Create a new database")
-
-        def handle_create_db(
-                database_type_name: str,
-                database_name_from_textbox: str,
-                selected_embeddings: List[str],
-                files_from_uploader: List[str],
-                chunk_size_from_slider: int,
-                chunk_overlap_from_slider: int,
-                model_json_from_dropdown: str,
-                selected_library: str,
-                text_segmentation_chose: str,
-        ):
-            yield gr.update(value="🚀 Tworzenie bazy danych!", interactive=False)
-
-
-            print(f'selected_embeddings: {selected_embeddings}')
-            print(f'text_segmentation_chose_state: {text_segmentation_chose_state}')
-
-            # Wywołujemy faktyczną operację
-            ui_create_database(
-                database_type_name,
-                database_name_from_textbox,
-                selected_embeddings,
-                files_from_uploader,
-                chunk_size_from_slider,
-                chunk_overlap_from_slider,
-                model_json_from_dropdown,
-                selected_library,
-                features_dict  #Zmienna "globalna"
-            )
-
-            # 3️⃣ Zmieniamy tekst na "CHUJ" po zakończeniu operacji
-            yield gr.update(value="✅ Baza danych została utworzona!", interactive=False)
-            time.sleep(2)
-            yield gr.update(value="🛠️ Utwórz nową bazę", interactive=True)
-
 
         create_db_btn.click(
             handle_create_db,  # 👈 Teraz przekazujemy funkcję zamiast `lambda`
@@ -457,17 +342,134 @@ def create_database_tab():
                 selected_database_engine_state,
                 db_name_input,
                 selected_embeddings_state,
+                floating_point_precision_state,
                 file_uploader,
                 chunk_size_slider,
                 chunk_overlap_slider,
                 model_dropdown_current_choice_state,
                 selected_library_state,
-                text_segmentation_chose_state
+                segmentation_type_radio,
+                features_state
             ],
             [create_db_btn]
         )
 
     return model_dropdown_choices_state
+
+
+def handle_create_db(
+        database_type_name: str,
+        database_name_from_textbox: str,
+        selected_embeddings: List[str],
+        floating_point_precision: str,
+        files_from_uploader: List[str],
+        chunk_size_from_slider: int,
+        chunk_overlap_from_slider: int,
+        model_json_from_dropdown: str,
+        selected_library: str,
+        segmentation_type: str,
+        features: str
+):
+    yield gr.update(value="🚀 Tworzenie bazy danych!", interactive=False)
+
+    # Wywołujemy faktyczną operację
+    ui_create_database(
+        db_engine_from_dropdown=database_type_name,
+        db_name_from_textbox=database_name_from_textbox,
+        selected_embeddings=selected_embeddings,
+        floating_point_precision=floating_point_precision,
+        files_from_uploader=files_from_uploader,
+        chunk_size_from_slider=chunk_size_from_slider,
+        chunk_overlap_from_slider=chunk_overlap_from_slider,
+        model_json=model_json_from_dropdown,
+        selected_library=selected_library,
+        segmentation_type=segmentation_type,
+        features_dict=json.loads(features)  # Zmienna "globalna"
+    )
+
+    # 3️⃣ Zmieniamy tekst na "CHUJ" po zakończeniu operacji
+    yield gr.update(value="✅ Baza danych została utworzona!", interactive=False)
+    time.sleep(2)
+    yield gr.update(value="🛠️ Utwórz nową bazę", interactive=True)
+
+def ui_create_database(
+        *,
+        db_engine_from_dropdown: str,
+        db_name_from_textbox: str,
+        selected_embeddings: List[str],
+        floating_point_precision: str,
+        files_from_uploader: List[str],
+        chunk_size_from_slider: int,
+        chunk_overlap_from_slider: int,
+        model_json: str,
+        selected_library: str,
+        segmentation_type: str,
+        features_dict: dict
+):
+    """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
+    # Walidacja nazwy bazy
+    any_error = False
+    if not db_engine_from_dropdown:
+        gr.Warning(f"❌ Nie wybrano silnika bazy danych!")
+        any_error = True
+    else:
+        db_engine_enum = DatabaseType.from_display_name(db_engine_from_dropdown)
+
+    if not db_name_from_textbox:
+        gr.Warning(f"❌ Nie podano nazwy bazy danych!")
+        any_error = True
+    else:
+        if not is_valid_db_name(db_name_from_textbox):
+            gr.Warning(f"❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki.")
+            any_error = True
+
+    if not files_from_uploader or len(files_from_uploader) == 0:
+        gr.Warning(f"❌ Nie wybrano żadnego pliku do utworzenia bazy danych!")
+        any_error = True
+
+
+    if not model_json:
+        gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
+        any_error = True
+    else:
+        model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_json))
+
+
+    if not selected_library:
+        gr.Warning(f"❌ Nie wyrabo żadnego typu embeddingów!")
+        any_error = True
+
+
+    if any_error:
+        return None
+
+    chosen_vector_database_info_instance = db_engine_enum.db_class(
+        database_name=db_name_from_textbox,
+        embedding_model_name=model_instance.model_name,
+        chunk_size=chunk_size_from_slider,
+        chunk_overlap=chunk_overlap_from_slider,
+        files_paths=files_from_uploader,
+        embedding_types=[EmbeddingType(choice) for choice in selected_embeddings],
+        float_precision=FloatPrecisionPointEnum(floating_point_precision),
+        transformer_library=TransformerLibrary.from_display_name(selected_library),
+        features=features_dict
+    )
+
+    max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
+    if len(chosen_vector_database_info_instance.embedding_types) > max_embeddings_count:
+        gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
+        return None
+
+    saved_databases_dict: dict = chosen_vector_database_info_instance.get_saved_databases_from_drive_as_instances()
+    saved_database_list = list(saved_databases_dict.keys())
+
+    if db_name_from_textbox in saved_database_list:
+        gr.Warning(f"❌ Już istnieje baza danych o takiej nazwie!")
+        return None
+
+
+    save_to_database(chosen_vector_database_info_instance)
+    return None
 
 def get_waiting_css_with_custom_text(*, text):
     return f"""
