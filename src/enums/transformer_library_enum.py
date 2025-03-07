@@ -13,6 +13,7 @@ from FlagEmbedding import FlagModel, BGEM3FlagModel
 from huggingface_hub import snapshot_download
 
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.models.chunk_metadata_model import ChunkMetadataModel
 
 
 class TransformerLibrary(Enum):
@@ -119,31 +120,54 @@ class TransformerLibrary(Enum):
         torch.cuda.empty_cache()
         return dense_embeddings, sparse_embeddings, colbert_embeddings
 
-    def perform_search(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_id: List[str], embeddings: tuple[List, List, List], query: str, vector_database_instance: "VectorDatabaseInfo", top_k: int):
+    def perform_search(
+            self, *,
+            text_chunks: List[str],
+            chunks_metadata: List[ChunkMetadataModel],
+            embeddings: tuple[List, List, List],
+            query: str,
+            vector_database_instance: "VectorDatabaseInfo", top_k: int
+    ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
         if self == TransformerLibrary.SentenceTransformers:
             dense_embeddings = embeddings[0] # ONLY DENSE
             query_embeddings = self.generate_embeddings([query], vector_database_instance)[0] # ONLY DENSE
 
-            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=torch.float32)
-            query_embeddings_tensor = torch.tensor(query_embeddings, dtype=torch.float32)
+            floating_precision = vector_database_instance.float_precision
+            d_type = torch.float32 if floating_precision == FloatPrecisionPointEnum.FP32 else torch.float16
+
+            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=d_type)
+            query_embeddings_tensor = torch.tensor(query_embeddings, dtype=d_type)
 
             result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
 
             response = ""
+            # for result_from_dict in result[0]:
+            #     corpus_id: int = result_from_dict['corpus_id']
+            #     score = result_from_dict['score']
+            #     response += (
+            #         f"📄 Plik: {chunks_metadata[corpus_id].source} "
+            #         f"(fragment {corpus_id}, dystans: {score:.4f}, model: {vector_database_instance.embedding_model_name})\n"
+            #         f"{text_chunks[corpus_id]}\n\n"
+            #     )
+
+            result_text: List[str] = []
+            result_chunks_metadata: List[ChunkMetadataModel] = []
+            result_scores: List[float] = []
             for result_from_dict in result[0]:
                 corpus_id: int = result_from_dict['corpus_id']
-                score = result_from_dict['score']
-                response += (
-                    f"📄 Plik: {chunks_metadata[corpus_id]["source"]} "
-                    f"(fragment {corpus_id}, dystans: {score:.4f}, model: {vector_database_instance.embedding_model_name})\n"
-                    f"{text_chunks[corpus_id]}\n\n"
-                )
+                result_text.append(text_chunks[corpus_id])
+                result_chunks_metadata.append(chunks_metadata[corpus_id])
+                result_scores.append(result_from_dict['score'])
+
+
             torch.cuda.empty_cache()
-            return response
+            return result_text, result_chunks_metadata, result_scores
 
 
         elif self == TransformerLibrary.FlagEmbedding:
-            return None
+            return [], [], []
+        else:
+            return [], [], []
 
 
 

@@ -18,6 +18,7 @@ from src.enums.floating_precision_enum import FloatPrecisionPointEnum
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
+from src.models.chunk_metadata_model import ChunkMetadataModel
 
 
 class VectorDatabaseInfo:
@@ -158,7 +159,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             features=json.loads(metadata.get("features"))
         )
 
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
 
         database_folder = self.get_database_type().db_folder
@@ -182,10 +183,10 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         if text_chunks:
             for i in tqdm(range(len(text_chunks)), desc="📥 ChromaDB: Tworzenie bazy danych"):
                 collection.add(
-                    ids=[hash_ids[i]],
+                    ids=[chunks_metadata[i].hash_id],
                     embeddings=[embeddings[0][i]], # MOZE PRZYJAC TYLKO DENSE
                     documents=[text_chunks[i]],
-                    metadatas=[chunks_metadata[i]]
+                    metadatas=[chunks_metadata[i].to_dict()]
                 )
 
         del chroma_client
@@ -210,15 +211,17 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         # Budujemy odpowiedź tekstową
         response = ""
         for doc, meta, dist in sorted_results:
+            meta_dict = dict(meta)
+            metadata = ChunkMetadataModel.from_dict(meta_dict)
             response += (
-                f"📄 Plik: {meta['source']} "
-                f"(fragment {meta['fragment_id']}, dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
+                f"📄 Plik: {metadata.source} "
+                f"(fragment {metadata.fragment_id}, characters: {metadata.characters_count}, tokens: {metadata.tokens_count} dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
                 f"{doc}\n\n"
             )
 
         return response
 
-    def retrieve_from_database(self) -> tuple[List, List, List, tuple[List, List, List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
@@ -233,14 +236,14 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         )
 
         # Przypisanie danych do zmiennych
-        text_chunks = results["documents"]
-        chunks_metadata = results["metadatas"]
-        hash_id = results["ids"]
-        dense_embeddings = results["embeddings"]
+        text_chunks = results[IncludeEnum.documents.value]
+        chunks_metadata = results[IncludeEnum.metadatas.value]
+        chunks_metadata_models: List[ChunkMetadataModel] = [ChunkMetadataModel.from_dict(meta) for meta in chunks_metadata]
+        dense_embeddings = results[IncludeEnum.embeddings.value]
 
         del chroma_client
 
-        return text_chunks, chunks_metadata, hash_id, (dense_embeddings, [], [])
+        return text_chunks, chunks_metadata_models, (dense_embeddings, [], [])
 
 
 class LanceVectorDatabase(VectorDatabaseInfo):
@@ -270,7 +273,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         return saved_databases
 
 
-    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[dict], hash_ids: List[str], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         def wait_for_index(target_table, index_name):
             poll_interval = 10
             while True:
@@ -294,23 +297,36 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         for i in tqdm(range(len(text_chunks)), desc="📥 LanceDB: Tworzenie bazy danych"):
             all_records.append({
-                'text': text_chunks[i],
                 EmbeddingType.DENSE.value: embeddings[0][i],
-                'source': chunks_metadata[i]['source'],
-                'fragment_id': chunks_metadata[i]["fragment_id"],
-                'hash_id': hash_ids[i]
+                "text": text_chunks[i],
+                **chunks_metadata[i].to_dict()  # Rozpakowanie słownika do dodania jego kluczy i wartości
             })
 
-        # Determine embedding dimension
-        embedding_dense_dim = len(all_records[0][EmbeddingType.DENSE.value])
-        # Define schema with FixedSizeList for embedding
-        schema = pa.schema([
-            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), embedding_dense_dim)),
-            pa.field("text", pa.string()),
-            pa.field("source", pa.string()),
-            pa.field("fragment_id", pa.int32()),
-            pa.field("hash_id", pa.string())
-        ])
+
+        # Sprawdzenie pierwszego rekordu, aby automatycznie określić schemat
+        first_record = all_records[0]
+
+        # Automatyczna definicja schema
+        schema_fields = [
+            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), len(first_record[EmbeddingType.DENSE.value]))),
+        ]
+
+        for key, value in first_record.items():
+            if key == EmbeddingType.DENSE.value:
+                continue  # Już dodane powyżej
+
+            # Dynamiczne przypisanie typu w zależności od wartości
+            if isinstance(value, int):
+                schema_fields.append(pa.field(key, pa.int32()))
+            elif isinstance(value, float):
+                schema_fields.append(pa.field(key, pa.float32()))
+            elif isinstance(value, str):
+                schema_fields.append(pa.field(key, pa.string()))
+            else:
+                raise TypeError(f"Nieznany typ dla klucza {key}: {type(value)}")
+
+        # Tworzenie schema na podstawie dynamicznych pól
+        schema = pa.schema(schema_fields)
 
         df = pd.DataFrame(all_records)
 
@@ -335,24 +351,24 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         del lance_db
 
-    def retrieve_from_database(self) -> tuple[List, List, List, tuple[List, List, List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
 
-        row_count = table.count_rows()
         # Odczytanie danych z tabeli jako DataFrame
         df = table.to_lance().to_table().to_pandas() # BUG W LANCE DB ZE TYLKO 10 REKORDOW ZWRACA
 
         # Rozpakowanie danych do zmiennych
         text_chunks: List = df['text'].tolist()
-        chunks_metadata: List = [{'source': row['source'], 'fragment_id': row['fragment_id']} for _, row in df.iterrows()]
+        chunks_metadata: List[ChunkMetadataModel] = [
+            ChunkMetadataModel.from_dict(row.to_dict()) for _, row in df.iterrows()
+        ]
         dense_embeddings = [list(embedding) for embedding in df[EmbeddingType.DENSE.value]]
-        hash_id = df['hash_id'].tolist()
 
         del lance_db
 
-        return text_chunks, chunks_metadata, hash_id, (dense_embeddings, [], [])
+        return text_chunks, chunks_metadata, (dense_embeddings, [], [])
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)

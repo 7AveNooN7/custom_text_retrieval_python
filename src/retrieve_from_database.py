@@ -2,6 +2,7 @@ from typing import List
 
 from src.enums.database_type_enum import DatabaseType
 from src.enums.transformer_library_enum import TransformerLibrary
+from src.models.chunk_metadata_model import ChunkMetadataModel
 from src.models.vector_database_info import VectorDatabaseInfo
 from sentence_transformers import SentenceTransformer, util
 
@@ -29,31 +30,41 @@ def perform_search(
         features_choices: List[str]
 ):
     search_type = get_search_type(search_method=search_method)
-
+    response = ""
     if isinstance(search_type, DatabaseType):
         return vector_database_instance.perform_search(query=query, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
     elif isinstance(search_type, TransformerLibrary):
         result = vector_database_instance.retrieve_from_database()
 
-
-
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
-        chunks_metadata: List[dict]
-        hash_id: List[str]
+        chunks_metadata: List[ChunkMetadataModel]
         embeddings: tuple[List, List, List] #Dense, Sparse, Colbert
 
-        text_chunks, chunks_metadata, hash_id, embeddings = result
+        text_chunks, chunks_metadata, embeddings = result
 
-        return search_type.perform_search(
+        result_text: List[str]
+        result_chunks_metadata: List[ChunkMetadataModel]
+        result_scores: List[float]
+
+        result_text, result_chunks_metadata, result_scores = search_type.perform_search(
             text_chunks=text_chunks,
             chunks_metadata=chunks_metadata,
-            hash_id=hash_id,
             embeddings=embeddings,
             query=query,
             vector_database_instance=vector_database_instance,
             top_k=top_k
         )
+
+        for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
+            response += (
+                f"📄 File: {metadata.source} "
+                f"(fragment {metadata.fragment_id}, score: {score:.4f}, model: {vector_database_instance.embedding_model_name}, characters: {metadata.characters_count}, tokens: {metadata.tokens_count})\n"
+                f"{text}\n\n"
+            )
+
+        return response
+
 
 
 
