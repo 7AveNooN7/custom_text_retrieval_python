@@ -51,7 +51,6 @@ class TransformerLibrary(Enum):
         wartość "model_name" w metadata.json pasuje do model_instance.name.
         """
         target_model_name = model_name
-        print(f'model_name: {target_model_name}')
         selected_model_path = None
 
         # Przeszukujemy MODEL_FOLDER w poszukiwaniu pasującego modelu
@@ -129,6 +128,7 @@ class TransformerLibrary(Enum):
             vector_database_instance: "VectorDatabaseInfo", top_k: int
     ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
         if self == TransformerLibrary.SentenceTransformers:
+            print('SentenceTransformers Search')
             dense_embeddings = embeddings[0] # ONLY DENSE
             query_embeddings = self.generate_embeddings([query], vector_database_instance)[0] # ONLY DENSE
 
@@ -139,16 +139,6 @@ class TransformerLibrary(Enum):
             query_embeddings_tensor = torch.tensor(query_embeddings, dtype=d_type)
 
             result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
-
-            response = ""
-            # for result_from_dict in result[0]:
-            #     corpus_id: int = result_from_dict['corpus_id']
-            #     score = result_from_dict['score']
-            #     response += (
-            #         f"📄 Plik: {chunks_metadata[corpus_id].source} "
-            #         f"(fragment {corpus_id}, dystans: {score:.4f}, model: {vector_database_instance.embedding_model_name})\n"
-            #         f"{text_chunks[corpus_id]}\n\n"
-            #     )
 
             result_text: List[str] = []
             result_chunks_metadata: List[ChunkMetadataModel] = []
@@ -165,6 +155,7 @@ class TransformerLibrary(Enum):
 
 
         elif self == TransformerLibrary.FlagEmbedding:
+            print('FlagEmbedding Search')
             return [], [], []
         else:
             return [], [], []

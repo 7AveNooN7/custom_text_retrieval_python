@@ -127,6 +127,7 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
                     overlap_top.insert(0, sentence)
                     overlap_length += sentence_length
                     if overlap_length > chunk_overlap:
+                        print(f'overlap_length: {overlap_length}, fragment: {i}')
                         break
             # Overlap "od dołu"
             if i < len(base_chunks) - 1:

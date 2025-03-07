@@ -101,7 +101,6 @@ def load_embedding_model(model_instance: str):
     wartość "model_name" w metadata.json pasuje do model_instance.name.
     """
     target_model_name = model_instance
-    print(f'model_name: {target_model_name}')
     selected_model_path = None
 
     # Przeszukujemy MODEL_FOLDER w poszukiwaniu pasującego modelu

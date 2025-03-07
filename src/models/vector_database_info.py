@@ -1,9 +1,9 @@
+from __future__ import annotations
 import json
 import os
 import sqlite3
 import time
 from typing import List, Dict, Any, Tuple, Optional
-import gradio as gr
 import chromadb
 import lancedb
 import numpy as np
@@ -13,13 +13,14 @@ from tqdm import tqdm
 import pyarrow as pa
 import pandas as pd
 
+
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.chunk_metadata_model import ChunkMetadataModel
-
+from abc import ABC, abstractmethod
 
 class VectorDatabaseInfo:
     def __init__(
@@ -92,7 +93,6 @@ class VectorDatabaseInfo:
         """Getter zwracający liczbę plików w files_paths."""
         return len(self.files_paths)
 
-
     @classmethod
     def get_database_type(cls) -> "DatabaseType":
         from src.enums.database_type_enum import DatabaseType
@@ -106,23 +106,23 @@ class VectorDatabaseInfo:
 class ChromaVectorDatabase(VectorDatabaseInfo):
 
     @classmethod
-    def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
-        saved_databases = {}
+    def get_saved_databases_from_drive_as_instances(cls) -> dict[str, ChromaVectorDatabase]:
+        saved_databases: dict[str, ChromaVectorDatabase] = {}
         database_folder = cls.get_database_type().db_folder
         for db_folder_name in os.listdir(database_folder):
             db_path = os.path.join(database_folder, db_folder_name)
             if not os.path.isdir(db_path):
                 continue
             chroma_client = chromadb.PersistentClient(path=db_path)
-            try:
-                collection = chroma_client.get_or_create_collection(name=db_folder_name)
-                metadata = collection.metadata or {}
-                # TU JEST PROBLEM
-                chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
-                database_name = chroma_vector_instance.database_name
-                saved_databases[database_name] = chroma_vector_instance
-            finally:
-                del chroma_client  # Zamknięcie klienta po każdej iteracji
+
+            collection = chroma_client.get_or_create_collection(name=db_folder_name)
+            metadata = collection.metadata or {}
+            # TU JEST PROBLEM
+            chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
+            database_name = chroma_vector_instance.database_name
+            saved_databases[database_name] = chroma_vector_instance
+
+            del chroma_client  # Zamknięcie klienta po każdej iteracji
 
         return saved_databases
 
@@ -143,7 +143,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         }
 
     @classmethod
-    def from_specific_database_metadata(cls, *, metadata: Dict):
+    def from_specific_database_metadata(cls, *, metadata: Dict) -> ChromaVectorDatabase:
         return cls(
             database_name=metadata.get("database_name", "N/A"),
             embedding_model_name=metadata.get("embedding_model_name", "N/A"),
@@ -192,6 +192,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         del chroma_client
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+        print('ChromaDB Search')
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
 
@@ -203,23 +204,31 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         results = collection.query(query_embeddings=query_embedding, n_results=top_k)
 
-        sorted_results = sorted(
-            zip(results["documents"][0], results["metadatas"][0], results["distances"][0]),
-            key=lambda x: x[2]
-        )
+        result_text: List[str] = results[IncludeEnum.documents.value][0]
+        result_chunks_metadata: List[ChunkMetadataModel] = [
+            ChunkMetadataModel.from_dict(meta_dict) for meta_dict in results[IncludeEnum.metadatas.value][0]
+        ]
+        result_scores: List[float] = results[IncludeEnum.distances.value][0]
 
-        # Budujemy odpowiedź tekstową
-        response = ""
-        for doc, meta, dist in sorted_results:
-            meta_dict = dict(meta)
-            metadata = ChunkMetadataModel.from_dict(meta_dict)
-            response += (
-                f"📄 Plik: {metadata.source} "
-                f"(fragment {metadata.fragment_id}, characters: {metadata.characters_count}, tokens: {metadata.tokens_count} dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
-                f"{doc}\n\n"
-            )
+        # sorted_results = sorted(
+        #     zip(results[IncludeEnum.documents.value][0], results[IncludeEnum.metadatas.value][0], results[IncludeEnum.distances.value][0]),
+        #     key=lambda x: x[2]
+        # )
+        #
+        # # Budujemy odpowiedź tekstową
+        # response = ""
+        # for doc, meta, dist in sorted_results:
+        #     meta_dict = dict(meta)
+        #     metadata = ChunkMetadataModel.from_dict(meta_dict)
+        #     response += (
+        #         f"📄 Plik: {metadata.source} "
+        #         f"(fragment {metadata.fragment_id}, characters: {metadata.characters_count}, tokens: {metadata.tokens_count} dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
+        #         f"{doc}\n\n"
+        #     )
+        #
+        # return response
 
-        return response
+        return result_text, result_chunks_metadata, result_scores
 
     def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
         # Ścieżka do bazy danych
@@ -371,10 +380,10 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         return text_chunks, chunks_metadata, (dense_embeddings, [], [])
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+        print('LanceDB Search')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
-
 
         transformer_library = self.transformer_library
         query_embedding: List = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
