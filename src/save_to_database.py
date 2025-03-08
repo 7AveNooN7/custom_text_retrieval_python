@@ -1,4 +1,5 @@
 import hashlib
+import math
 import os
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -14,7 +15,8 @@ from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.chunk_metadata_model import ChunkMetadataModel
 from src.models.vector_database_info import VectorDatabaseInfo
 
-def split_text_into_characters_chunks_by_characters(text: str, chunk_size: int, chunk_overlap: int, overlap_type: OverlapTypeEnum) -> List[str]:
+
+def split_text_into_characters_chunks_by_characters(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
     """
     Dzieli tekst na fragmenty o określonej liczbie znaków z paskiem postępu.
 
@@ -23,15 +25,23 @@ def split_text_into_characters_chunks_by_characters(text: str, chunk_size: int, 
     :param chunk_overlap: Nakładanie się fragmentów w znakach.
     :return: Lista fragmentów tekstu.
     """
+    # Walidacja parametrów
+    if chunk_size <= 0:
+        raise ValueError("Parametr 'chunk_size' musi być większy od 0!")
     step = chunk_size - chunk_overlap
     if step <= 0:
         raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
 
-    chunks = []
-    total_iterations = (len(text) - chunk_overlap) // step + 1  # Liczba iteracji pętli
+    # Jeśli tekst jest krótszy niż chunk_size, zwróć go jako jeden fragment
+    if len(text) <= chunk_size:
+        return [text]
 
-    for i in tqdm(range(0, len(text), step), desc="Characters chunks: Przetwarzanie fragmentów", unit="chunk", total=total_iterations):
-        chunk = text[i: i + chunk_size]
+    chunks = []
+
+    # Główna pętla dzielenia tekstu
+    for i in tqdm(range(0, len(text), step), desc="Characters chunks: Przetwarzanie fragmentów",
+                  unit="chunk", total=math.ceil(len(text) / step)):
+        chunk = text[i:i + chunk_size]
         chunks.append(chunk)
 
     return chunks
@@ -61,89 +71,94 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
 
     final_chunks = []
 
-    if overlaptype == OverlapTypeEnum.DOUBLE:
-        # Tryb 1: Double overlap "od góry i od dołu"
-        # Krok 1: Tworzenie bazowych fragmentów
-        base_chunks = []  # Lista, która będzie przechowywać wszystkie bazowe fragmenty
-        current_chunk = []  # Aktualny fragment, do którego dodajemy zdania
-        current_length = 0  # Aktualna długość current_chunk w znakach (z uwzględnieniem spacji)
-        sentence_index = 0  # Indeks bieżącego zdania w liście sentences
+    # if overlaptype == OverlapTypeEnum.DOUBLE:
+    #     # Tryb 1: Double overlap "od góry i od dołu"
+    #     # Krok 1: Tworzenie bazowych fragmentów
+    #     base_chunks = []  # Lista, która będzie przechowywać wszystkie bazowe fragmenty
+    #     current_chunk = []  # Aktualny fragment, do którego dodajemy zdania
+    #     current_length = 0  # Aktualna długość current_chunk w znakach (z uwzględnieniem spacji)
+    #     sentence_index = 0  # Indeks bieżącego zdania w liście sentences
+    #
+    #     # Pierwsza pętla: pierwszy fragment
+    #     max_length = chunk_size - chunk_overlap if total_sentences_count > 1 else chunk_size
+    #     while not base_chunks and sentence_index < total_sentences_count:
+    #         sentence = sentences[sentence_index]
+    #         sentence_length = len(sentence)
+    #         overall_length = sentence_length + (1 if current_chunk else 0)
+    #
+    #         # Dodajemy zdanie zawsze, nawet jeśli przekracza max_length
+    #         current_chunk.append(sentence)
+    #         current_length += overall_length
+    #
+    #         # Jeśli przekroczyliśmy max_length i mamy więcej zdań, zamykamy fragment
+    #         if current_length > max_length and sentence_index + 1 < total_sentences_count:
+    #             base_chunks.append(current_chunk)
+    #             current_chunk = []
+    #             current_length = 0
+    #
+    #         sentence_index += 1
+    #
+    #     if current_chunk and not base_chunks:
+    #         base_chunks.append(current_chunk)
+    #         current_chunk = []
+    #         current_length = 0
+    #
+    #     # Druga pętla: środkowe i ostatni fragment
+    #     max_length = chunk_size - chunk_overlap * 2
+    #     while sentence_index < total_sentences_count:
+    #         sentence = sentences[sentence_index]
+    #         sentence_length = len(sentence)
+    #         overall_length = sentence_length + (1 if current_chunk else 0)
+    #         # Dodajemy zdanie zawsze
+    #         current_chunk.append(sentence)
+    #         current_length += overall_length
+    #         # Zamykamy fragment, jeśli przekroczyliśmy max_length i są kolejne zdania
+    #         if current_length > max_length and sentence_index + 1 < total_sentences_count:
+    #             base_chunks.append(current_chunk)
+    #             current_chunk = []
+    #             current_length = 0
+    #         sentence_index += 1
+    #
+    #     if current_chunk:
+    #         base_chunks.append(current_chunk)
+    #
+    #     for i, chunk in enumerate(base_chunks):
+    #         chunk_text = " ".join(chunk)
+    #
+    #         print(f'{i} ({len(chunk_text)}): {chunk_text}')
+    #
+    #     # Krok 2: Dodawanie overlapu "od góry" i "od dołu"
+    #     final_chunks = []
+    #     for i, chunk in enumerate(tqdm(base_chunks, desc="Dodawanie overlapu", unit="chunk")):
+    #         overlap_top = []
+    #         overlap_bottom = []
+    #
+    #         # Overlap "od góry"
+    #         if i > 0:
+    #             prev_chunk = base_chunks[i - 1]
+    #             overlap_length = 0
+    #             for sentence in reversed(prev_chunk):
+    #                 sentence_length = len(sentence) + (1 if overlap_top else 0)
+    #                 overlap_top.insert(0, sentence)
+    #                 overlap_length += sentence_length
+    #                 if overlap_length > chunk_overlap:
+    #                     #print(f'overlap_length: {overlap_length}, fragment: {i}')
+    #                     break
+    #         # Overlap "od dołu"
+    #         if i < len(base_chunks) - 1:
+    #             next_chunk = base_chunks[i + 1]
+    #             overlap_length = 0
+    #             for sentence in next_chunk:
+    #                 sentence_length = len(sentence) + (1 if overlap_bottom else 0)
+    #                 overlap_bottom.append(sentence)
+    #                 overlap_length += sentence_length
+    #                 if overlap_length > chunk_overlap:
+    #                     break
+    #         # Łączenie: overlap_top + chunk + overlap_bottom
+    #         final_chunk = overlap_top + chunk + overlap_bottom
+    #         final_chunks.append(" ".join(final_chunk))
 
-        # Pierwsza pętla: pierwszy fragment
-        max_length = chunk_size - chunk_overlap if total_sentences_count > 1 else chunk_size
-        while not base_chunks and sentence_index < total_sentences_count:
-            sentence = sentences[sentence_index]
-            sentence_length = len(sentence)
-            overall_length = sentence_length + (1 if current_chunk else 0)
-
-            # Dodajemy zdanie zawsze, nawet jeśli przekracza max_length
-            current_chunk.append(sentence)
-            current_length += overall_length
-
-            # Jeśli przekroczyliśmy max_length i mamy więcej zdań, zamykamy fragment
-            if current_length > max_length and sentence_index + 1 < total_sentences_count:
-                base_chunks.append(current_chunk)
-                current_chunk = []
-                current_length = 0
-
-            sentence_index += 1
-
-        if current_chunk and not base_chunks:
-            base_chunks.append(current_chunk)
-            current_chunk = []
-            current_length = 0
-
-        # Druga pętla: środkowe i ostatni fragment
-        max_length = chunk_size - chunk_overlap * 2
-        while sentence_index < total_sentences_count:
-            sentence = sentences[sentence_index]
-            sentence_length = len(sentence)
-            overall_length = sentence_length + (1 if current_chunk else 0)
-            # Dodajemy zdanie zawsze
-            current_chunk.append(sentence)
-            current_length += overall_length
-            # Zamykamy fragment, jeśli przekroczyliśmy max_length i są kolejne zdania
-            if current_length > max_length and sentence_index + 1 < total_sentences_count:
-                base_chunks.append(current_chunk)
-                current_chunk = []
-                current_length = 0
-            sentence_index += 1
-
-        if current_chunk:
-            base_chunks.append(current_chunk)
-
-        # Krok 2: Dodawanie overlapu "od góry" i "od dołu"
-        final_chunks = []
-        for i, chunk in enumerate(tqdm(base_chunks, desc="Dodawanie overlapu", unit="chunk")):
-            overlap_top = []
-            overlap_bottom = []
-
-            # Overlap "od góry"
-            if i > 0:
-                prev_chunk = base_chunks[i - 1]
-                overlap_length = 0
-                for sentence in reversed(prev_chunk):
-                    sentence_length = len(sentence) + (1 if overlap_top else 0)
-                    overlap_top.insert(0, sentence)
-                    overlap_length += sentence_length
-                    if overlap_length > chunk_overlap:
-                        print(f'overlap_length: {overlap_length}, fragment: {i}')
-                        break
-            # Overlap "od dołu"
-            if i < len(base_chunks) - 1:
-                next_chunk = base_chunks[i + 1]
-                overlap_length = 0
-                for sentence in next_chunk:
-                    sentence_length = len(sentence) + (1 if overlap_bottom else 0)
-                    overlap_bottom.append(sentence)
-                    overlap_length += sentence_length
-                    if overlap_length > chunk_overlap:
-                        break
-            # Łączenie: overlap_top + chunk + overlap_bottom
-            final_chunk = overlap_top + chunk + overlap_bottom
-            final_chunks.append(" ".join(final_chunk))
-
-    elif overlaptype == OverlapTypeEnum.SLIDING_WINDOW:
+    if overlaptype == OverlapTypeEnum.SLIDING_WINDOW:
         # Tryb 2: Sliding window z overlapem "od góry"
         current_chunk = []
         current_length = 0
@@ -174,8 +189,12 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
                 current_length = overlap_length
 
             sentence_index += 1
+
         if current_chunk:
             final_chunks.append(" ".join(current_chunk))
+
+    # for i, chunk in enumerate(final_chunks):
+    #     print(f'{i}: {chunk}')
 
     return final_chunks
 
@@ -185,7 +204,7 @@ def split_text_into_token_chunks(text: str, chunk_size: int, chunk_overlap: int)
     Dzieli tekst na fragmenty o określonej liczbie tokenów z paskiem postępu.
 
     :param text: Tekst wejściowy.
-    :param chunk_size: Maksymalna liczba tokenów w fragmencie.
+    :param chunk_size: Maksymalna liczba tokenów we fragmencie.
     :param chunk_overlap: Nakładanie się fragmentów w tokenach.
     :return: Lista fragmentów tekstu.
     """
@@ -234,8 +253,7 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
                 chunks = split_text_into_characters_chunks_by_characters(
                     whole_text_from_file,
                     vector_database_instance.chunk_size,
-                    vector_database_instance.chunk_overlap,
-                    vector_database_instance.overlap_type
+                    vector_database_instance.chunk_overlap
                 )
         else:
             chunks = split_text_into_token_chunks(
