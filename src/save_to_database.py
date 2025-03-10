@@ -8,11 +8,12 @@ import gradio as gr
 import numpy as np
 import tiktoken
 from tqdm import tqdm
-
+from transformers import AutoTokenizer
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.chunk_metadata_model import ChunkMetadataModel
+from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
 from src.models.vector_database_info import VectorDatabaseInfo
 
 
@@ -199,31 +200,57 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
     return final_chunks
 
 
-def split_text_into_token_chunks(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+def split_text_into_token_chunks(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    text_segmentation_type: TextSegmentationTypeEnum,
+    model_name: str
+) -> List[str]:
     """
     Dzieli tekst na fragmenty o określonej liczbie tokenów z paskiem postępu.
 
     :param text: Tekst wejściowy.
-    :param chunk_size: Maksymalna liczba tokenów we fragmencie.
-    :param chunk_overlap: Nakładanie się fragmentów w tokenach.
+    :param chunk_size: Maksymalna liczba tokenów w każdym fragmencie (większa od 0).
+    :param chunk_overlap: Liczba tokenów nakładania się między fragmentami (mniejsza niż chunk_size).
     :return: Lista fragmentów tekstu.
+    :raises ValueError: Jeśli chunk_size <= 0 lub chunk_overlap >= chunk_size.
     """
-    tokenizer = tiktoken.get_encoding('cl100k_base')
+    # Walidacja parametrów
+    if not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("Parametr 'chunk_size' musi być dodatnią liczbą całkowitą!")
+    if not isinstance(chunk_overlap, int) or chunk_overlap < 0:
+        raise ValueError("Parametr 'chunk_overlap' musi być nieujemną liczbą całkowitą!")
+    if chunk_overlap >= chunk_size:
+        raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
+
+    if text_segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN:
+        tokenizer = tiktoken.get_encoding("cl100k_base")
+    elif text_segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER:
+        tokenizer = AutoTokenizer.from_pretrained(DownloadedEmbeddingModel.build_target_dir(model_name))
+    else:
+        raise Exception('COŚ NIE TAK')
+
     tokens = tokenizer.encode(text)
 
+    # Jeśli tekst jest pusty lub krótszy niż chunk_size, zwróć go jako jeden fragment
+    if not tokens:
+        return [""]
+    if len(tokens) <= chunk_size:
+        return [text]
+
     chunks = []
-    start = 0
+    step = chunk_size - chunk_overlap
+    total_iterations = max(1, (len(tokens) - chunk_size + step - 1) // step)
 
-    # Oblicz liczbę iteracji, aby pasek postępu działał poprawnie
-    total_iterations = (len(tokens) - chunk_overlap) // (chunk_size - chunk_overlap) + 1
-
-    for _ in tqdm(range(total_iterations), desc="Token chunks: Trwa przetwarzanie fragmentów", unit="chunk"):
+    # Dzielenie tekstu na fragmenty
+    for i in tqdm(range(total_iterations), desc="Token chunks: Przetwarzanie fragmentów", unit="chunk"):
+        start = i * step
         if start >= len(tokens):
             break
         end = min(start + chunk_size, len(tokens))
         chunk_tokens = tokens[start:end]
         chunks.append(tokenizer.decode(chunk_tokens))
-        start += chunk_size - chunk_overlap  # Przesunięcie o chunk_size - chunk_overlap
 
     return chunks
 
@@ -259,7 +286,9 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
             chunks = split_text_into_token_chunks(
                 whole_text_from_file,
                 vector_database_instance.chunk_size,
-                vector_database_instance.chunk_overlap
+                vector_database_instance.chunk_overlap,
+                vector_database_instance.segmentation_type,
+                vector_database_instance.embedding_model_name
             )
 
         tokenizer = tiktoken.get_encoding("cl100k_base")

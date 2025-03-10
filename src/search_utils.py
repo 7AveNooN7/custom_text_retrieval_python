@@ -1,10 +1,6 @@
 import json
 
 import tiktoken
-import gradio as gr
-from markdown_it.cli.parse import interactive
-
-from src.db_utils import get_databases_with_info
 from src.enums.database_type_enum import DatabaseType
 
 # Tokenizer tiktoken

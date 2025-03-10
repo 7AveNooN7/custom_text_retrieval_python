@@ -6,10 +6,8 @@ from src.enums.database_type_enum import DatabaseType, DatabaseFeature
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.vector_database_info import VectorDatabaseInfo
-from src.retrieve_from_database import perform_search, get_search_type
+from src.perform_search import perform_search, get_search_type
 from src.search_utils import count_tokens, fetch_saved_databases
-from src.chroma_db_utils import retrieve_text_from_chroma_db
-from src.lance_db_utils import retrieve_text_from_lance_db
 
 def search_database_tab():
     with gr.Tab("🔎 Wyszukiwanie w bazie"):

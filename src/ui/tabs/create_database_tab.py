@@ -1,17 +1,17 @@
 import json
+import os
+import re
 import time
 import gradio as gr
 from typing import List, Tuple, Optional
-from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
-from src.db_utils import is_valid_db_name
+from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, MODEL_FOLDER
 from src.enums.embedding_type_enum import EmbeddingType
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
-from src.embedding_model_utils import get_downloaded_models_for_dropdown
 from src.enums.database_type_enum import DatabaseType, DatabaseFeature
-from src.models.downloaded_model_info import DownloadedModelInfo
+from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
 from src.save_to_database import save_to_database
 
 
@@ -179,7 +179,7 @@ def create_database_tab():
             @gr.render(inputs=[model_dropdown_current_choice_state, selected_database_engine_state])
             def generate_library_checkboxes(model_dropdown_current_choice: str, selected_database_engine: str):
                 if model_dropdown_current_choice and selected_database_engine:
-                    model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_dropdown_current_choice))
+                    model_instance = DownloadedEmbeddingModel.from_dict(json_data=json.loads(model_dropdown_current_choice))
                     radio = gr.Radio(
                         label='Choose a python embedding library',
                         choices=[supported_library.display_name for supported_library, _ in
@@ -215,7 +215,7 @@ def create_database_tab():
                 if db_engine_json and db_engine_json in [db.display_name for db in DatabaseType] and selected_library and model_dropdown_current_choice_state:
                     db_type = DatabaseType.from_display_name(db_engine_json)
                     embedding_choices_database = [et.value for et in db_type.supported_embeddings]
-                    model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_instance_info))
+                    model_instance = DownloadedEmbeddingModel.from_dict(json_data=json.loads(model_instance_info))
                     model_info_supported_embeddings: List[EmbeddingType] = model_instance.get_supported_embeddings_from_specific_library(TransformerLibrary.from_display_name(selected_library))
                     embedding_choices_model_info = [embedding.value for embedding in model_info_supported_embeddings]
                     choices = list(set(embedding_choices_database) & set(embedding_choices_model_info))
@@ -335,7 +335,7 @@ def create_database_tab():
 
                     segmentation_type_radio = gr.Radio(
                         label='✂️ Text segmentation type',
-                        value=TextSegmentationTypeEnum.TOKENS.value,
+                        value=TextSegmentationTypeEnum.TIK_TOKEN.value,
                         choices=[ts.value for ts in TextSegmentationTypeEnum],
                         interactive=True
                     )
@@ -460,7 +460,7 @@ def ui_create_database(
         gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
     else:
-        model_instance = DownloadedModelInfo.from_dict(json_data=json.loads(model_json))
+        model_instance = DownloadedEmbeddingModel.from_dict(json_data=json.loads(model_json))
 
 
     if not selected_library:
@@ -501,6 +501,57 @@ def ui_create_database(
 
     save_to_database(chosen_vector_database_info_instance)
     return None
+
+def is_valid_db_name(name: str) -> bool:
+    """
+    Waliduje nazwę bazy – musi mieć 3-63 znaki i zawierać tylko [a-zA-Z0-9._-].
+    - Dozwolone są kropki (.), ale nazwa nie może zaczynać ani kończyć się kropką.
+    """
+    if not (3 <= len(name) <= 63):
+        return False
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$", name):
+        return False
+    return True
+
+def get_downloaded_models_for_dropdown() -> List[Tuple[str, str]]:
+    """
+    Przechodzi przez podfoldery w model_folder i wyszukuje modele.
+    Za model uznajemy katalog, który zawiera plik 'metadata.json'.
+    Zwraca listę obiektów DownloadedModelInfo. Działa tylko przy inizjalizacji aplikacji.
+    """
+    downloaded_models = []
+
+    for model_folder in os.scandir(MODEL_FOLDER):
+        if model_folder.is_dir():
+            metadata_json_path = os.path.join(model_folder.path, "metadata.json")
+            if os.path.isfile(metadata_json_path):
+                try:
+                    with open(metadata_json_path, "r", encoding="utf-8") as metadata_json_file:
+                        json_data = json.load(metadata_json_file)
+                        model_info: DownloadedEmbeddingModel = DownloadedEmbeddingModel.from_dict(json_data=json_data)
+                        downloaded_models.append((create_downloaded_model_label(model_info), json.dumps(model_info.to_dict(), ensure_ascii=False))) # stworze krotke (label, json_data)
+                except Exception as error:
+                    print(f"⚠️ Błąd odczytu metadata.json w katalogu '{model_folder.name}': {error}")
+
+    return downloaded_models
+
+def create_downloaded_model_label(model_info: DownloadedEmbeddingModel) -> str:
+    model_info_dict = model_info.to_dict()
+
+    print(f'model_info_dict:\n{model_info_dict}')
+
+    # Lista do budowy etykiety
+    label_parts = [model_info.model_name]
+
+    # Iteracja po supported_libraries
+    for library, embeddings in model_info_dict["supported_libraries"].items():
+        # Tworzenie tekstu dla każdej biblioteki
+        embeddings_str = ", ".join(embeddings)
+        label_parts.append(f"{library}: {embeddings_str}")
+
+    # Łączenie wszystkich części za pomocą " | "
+    return "  |  ".join(label_parts)
+
 
 
 def get_waiting_css_with_custom_text(*, text):

@@ -1,14 +1,10 @@
+import traceback
 from typing import List, Tuple
 
 import gradio as gr
 import json
-import os
-
-from src.config import MODEL_FOLDER
-from src.embedding_model_utils import get_downloaded_models_for_dropdown, download_model_from_hf, add_model
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.downloaded_model_info import DownloadedModelInfo
+from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
+from src.ui.tabs.create_database_tab import create_downloaded_model_label
 
 
 def add_model_tab(model_dropdown_choices_state):
@@ -32,16 +28,16 @@ def add_model_tab(model_dropdown_choices_state):
 
 
 def ui_add_model(model_name: str, model_dropdown_choices_state: List[Tuple[str, str]]) -> Tuple[str, List[Tuple[str, str]]]:
-    print(f'model_dropdown_choices_state: {model_dropdown_choices_state}')
     try:
-        model_instance: DownloadedModelInfo = add_model(model_name)
+        model_instance: DownloadedEmbeddingModel = DownloadedEmbeddingModel.from_huggingface(model_name)
         list_of_model_instances = model_dropdown_choices_state
         list_of_model_instances.append((
-            model_instance.model_name,
-            json.dumps(model_instance.to_dict(), ensure_ascii=False)
+            create_downloaded_model_label(model_instance),
+            json.dumps(model_instance.to_dict(), ensure_ascii=False),
         ))
         return f"✅ Pomyślnie pobrano model '{model_name}'!", list_of_model_instances
 
 
     except Exception as e:
+        traceback.print_exc()
         return f"❌ Błąd przy pobieraniu modelu '{model_name}': {e}", model_dropdown_choices_state
