@@ -2,13 +2,17 @@ import hashlib
 import math
 import os
 import re
+import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Tuple, Optional
 import gradio as gr
 import numpy as np
 import tiktoken
+import nltk
 from tqdm import tqdm
 from transformers import AutoTokenizer
+
+from src.embeddings_type_checking import embedding_types_checking
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
@@ -211,48 +215,76 @@ def split_text_into_token_chunks(
     Dzieli tekst na fragmenty o określonej liczbie tokenów z paskiem postępu.
 
     :param text: Tekst wejściowy.
-    :param chunk_size: Maksymalna liczba tokenów w każdym fragmencie (większa od 0).
-    :param chunk_overlap: Liczba tokenów nakładania się między fragmentami (mniejsza niż chunk_size).
+    :param chunk_size: Maksymalna liczba tokenów w każdym fragmencie.
+    :param chunk_overlap: Liczba tokenów nakładania się między fragmentami.
+    :param text_segmentation_type: Typ segmentacji tekstu.
+    :param model_name: Nazwa modelu dla tokenizera.
     :return: Lista fragmentów tekstu.
-    :raises ValueError: Jeśli chunk_size <= 0 lub chunk_overlap >= chunk_size.
     """
     # Walidacja parametrów
-    if not isinstance(chunk_size, int) or chunk_size <= 0:
-        raise ValueError("Parametr 'chunk_size' musi być dodatnią liczbą całkowitą!")
-    if not isinstance(chunk_overlap, int) or chunk_overlap < 0:
-        raise ValueError("Parametr 'chunk_overlap' musi być nieujemną liczbą całkowitą!")
-    if chunk_overlap >= chunk_size:
-        raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
-
-    if text_segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN:
-        tokenizer = tiktoken.get_encoding("cl100k_base")
-    elif text_segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER:
-        tokenizer = AutoTokenizer.from_pretrained(DownloadedEmbeddingModel.build_target_dir(model_name))
-    else:
-        raise Exception('COŚ NIE TAK')
-
-    tokens = tokenizer.encode(text)
-
-    # Jeśli tekst jest pusty lub krótszy niż chunk_size, zwróć go jako jeden fragment
-    if not tokens:
-        return [""]
-    if len(tokens) <= chunk_size:
-        return [text]
+    if chunk_size <= 0:
+        raise ValueError("Parametr 'chunk_size' musi być większy od 0!")
 
     chunks = []
-    step = chunk_size - chunk_overlap
-    total_iterations = max(1, (len(tokens) - chunk_size + step - 1) // step)
 
-    # Dzielenie tekstu na fragmenty
-    for i in tqdm(range(total_iterations), desc="Token chunks: Przetwarzanie fragmentów", unit="chunk"):
-        start = i * step
-        if start >= len(tokens):
-            break
-        end = min(start + chunk_size, len(tokens))
-        chunk_tokens = tokens[start:end]
-        chunks.append(tokenizer.decode(chunk_tokens))
+    # Wybór tokenizera
+    if text_segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN:
+        tokenizer = tiktoken.get_encoding("cl100k_base")
+        tokens = tokenizer.encode(text)
+
+        if not tokens:
+            return [""]
+        if len(tokens) <= chunk_size:
+            return [text]
+
+        step = chunk_size - chunk_overlap
+
+        # Główna pętla dzielenia tokenów
+        for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
+                      unit="chunk", total=math.ceil(len(tokens) / step)):
+            chunk_tokens = tokens[i:i + chunk_size]
+            chunk_text = tokenizer.decode(chunk_tokens)
+            chunks.append(chunk_text)
+
+    elif text_segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        special_tokens_count = len(tokenizer.encode("", add_special_tokens=True))
+        adjusted_chunk_size = chunk_size - special_tokens_count
+        if adjusted_chunk_size <= 0:
+            raise ValueError("chunk_size jest za mały po uwzględnieniu tokenów specjalnych!")
+        # Tokenizacja z zachowaniem informacji o pozycjach
+        encoding = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+        tokens = encoding.tokens()
+        offsets = encoding.offset_mapping  # Mapowanie pozycji znaków w oryginalnym tekście
+
+        if not tokens:
+            return [""]
+        if len(tokens) <= adjusted_chunk_size:
+            return [text]
+
+        step = adjusted_chunk_size - chunk_overlap
+
+        for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
+                      unit="chunk", total=math.ceil(len(tokens) / step)):
+            chunk_tokens = tokens[i:i + adjusted_chunk_size]
+
+            # Pobierz pozycje startu i końca fragmentu w oryginalnym tekście
+            start_idx = offsets[i][0]  # Początek pierwszego tokenu w fragmencie
+            end_idx = offsets[min(i + adjusted_chunk_size - 1, len(tokens) - 1)][1]  # Koniec ostatniego tokenu
+
+            # Wyodrębnij oryginalny fragment tekstu
+            chunk_text = text[start_idx:end_idx].strip()
+
+            while len(tokenizer.encode(chunk_text, add_special_tokens=True)) > chunk_size:
+                chunk_text = chunk_text[1:]
+
+            chunks.append(chunk_text)
+
+    else:
+        raise Exception("Nieprawidłowy typ segmentacji!")
 
     return chunks
+
 
 def generate_id(text: str, filename: str, index: int) -> str:
     return hashlib.md5(f"{filename}_{index}_{text}".encode()).hexdigest()
@@ -291,7 +323,9 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
                 vector_database_instance.embedding_model_name
             )
 
-        tokenizer = tiktoken.get_encoding("cl100k_base")
+        tiktoken_tokenizer = tiktoken.get_encoding("cl100k_base")
+
+        model_tokenizer = AutoTokenizer.from_pretrained(DownloadedEmbeddingModel.build_target_dir(vector_database_instance.embedding_model_name))
 
         # Tworzenie fragmentów i metadanych
         for chunk_index, chunk in enumerate(chunks):
@@ -302,7 +336,8 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
                     hash_id=generate_id(chunk, file_path, chunk_index),
                     fragment_id=chunk_index,
                     characters_count=len(chunk),
-                    tokens_count=len(tokenizer.encode(chunk))
+                    tiktoken_tokens_count=len(tiktoken_tokenizer.encode(chunk)),
+                    model_tokenizer_token_count=len(model_tokenizer.encode(chunk))
                 )
             )
     except Exception as e:
@@ -342,13 +377,13 @@ def save_to_database(vector_database_instance: VectorDatabaseInfo):
     text_chunks, chunks_metadata = generate_text_chunks(vector_database_instance)
     gr.Info("✅ Text Chunks created!")
     embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]] = generate_embeddings(text_chunks, vector_database_instance)
-    # print(f'text: {text_chunks[0]}')
-    # print(f'dense: {embeddings[0][0]}\ntype: {type(embeddings[0][0])}')
-    # print(f'sparse: {embeddings[1][0]}\ntype: {type(embeddings[1][0])}')
-    # print(f'colbert: {embeddings[2][0]}\ntype: {type(embeddings[2][0])}')
-    print(f'dense2: {type(embeddings[0])}')
-    print(f'sparse2: {type(embeddings[1])}')
-    print(f'colbert2: {type(embeddings[2])}')
+
+    try:
+        embedding_types_checking(embeddings)
+    except Exception as e:
+        gr.Error(f"❌ Błąd w sprawdzaniu typów osadzeń: {e}")
+        traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
+        return  # Zatrzymuje dalsze działanie funkcji
 
     gr.Info("✅ Embeddings created!")
     vector_database_instance.create_new_database(text_chunks=text_chunks, chunks_metadata=chunks_metadata, embeddings=embeddings)

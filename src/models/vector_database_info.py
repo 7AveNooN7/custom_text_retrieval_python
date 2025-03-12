@@ -102,6 +102,15 @@ class VectorDatabaseInfo:
                 return db_type
         raise ValueError(f"Brak odpowiedniego typu bazy danych dla klasy: {cls.__name__}")
 
+    def perform_search(self, query, top_k, vector_choices, features_choices):
+        pass
+
+    def retrieve_from_database(self):
+        pass
+
+    def create_new_database(self, text_chunks, chunks_metadata, embeddings):
+        pass
+
 
 class ChromaVectorDatabase(VectorDatabaseInfo):
 
@@ -210,27 +219,11 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         ]
         result_scores: List[float] = results[IncludeEnum.distances.value][0]
 
-        # sorted_results = sorted(
-        #     zip(results[IncludeEnum.documents.value][0], results[IncludeEnum.metadatas.value][0], results[IncludeEnum.distances.value][0]),
-        #     key=lambda x: x[2]
-        # )
-        #
-        # # Budujemy odpowiedź tekstową
-        # response = ""
-        # for doc, meta, dist in sorted_results:
-        #     meta_dict = dict(meta)
-        #     metadata = ChunkMetadataModel.from_dict(meta_dict)
-        #     response += (
-        #         f"📄 Plik: {metadata.source} "
-        #         f"(fragment {metadata.fragment_id}, characters: {metadata.characters_count}, tokens: {metadata.tokens_count} dystans: {dist:.4f}, model: {self.embedding_model_name})\n"
-        #         f"{doc}\n\n"
-        #     )
-        #
-        # return response
 
         return result_text, result_chunks_metadata, result_scores
 
     def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
+        print('ChromaDB Retrieve')
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
@@ -256,6 +249,8 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
 
 class LanceVectorDatabase(VectorDatabaseInfo):
+    TEXT_COLUMN = "text"
+    METADATA_COLUMN = "metadata"
 
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
@@ -307,8 +302,8 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         for i in tqdm(range(len(text_chunks)), desc="📥 LanceDB: Tworzenie bazy danych"):
             all_records.append({
                 EmbeddingType.DENSE.value: embeddings[0][i],
-                "text": text_chunks[i],
-                **chunks_metadata[i].to_dict()  # Rozpakowanie słownika do dodania jego kluczy i wartości
+                self.TEXT_COLUMN: text_chunks[i],
+                self.METADATA_COLUMN: json.dumps(chunks_metadata[i].to_dict())
             })
 
 
@@ -318,21 +313,9 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         # Automatyczna definicja schema
         schema_fields = [
             pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), len(first_record[EmbeddingType.DENSE.value]))),
+            pa.field(self.TEXT_COLUMN, pa.string()),
+            pa.field(self.METADATA_COLUMN, pa.binary())
         ]
-
-        for key, value in first_record.items():
-            if key == EmbeddingType.DENSE.value:
-                continue  # Już dodane powyżej
-
-            # Dynamiczne przypisanie typu w zależności od wartości
-            if isinstance(value, int):
-                schema_fields.append(pa.field(key, pa.int32()))
-            elif isinstance(value, float):
-                schema_fields.append(pa.field(key, pa.float32()))
-            elif isinstance(value, str):
-                schema_fields.append(pa.field(key, pa.string()))
-            else:
-                raise TypeError(f"Nieznany typ dla klucza {key}: {type(value)}")
 
         # Tworzenie schema na podstawie dynamicznych pól
         schema = pa.schema(schema_fields)
@@ -349,18 +332,19 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         from src.enums.database_type_enum import DatabaseFeature
         if DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in self.features:
             if self.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]['use_tantivy']:
-                table.create_fts_index("text", use_tantivy=True, tokenizer_name="en_stem")
+                table.create_fts_index(self.TEXT_COLUMN, use_tantivy=True, tokenizer_name="en_stem")
             else:
-                table.create_fts_index("text", use_tantivy=False, tokenizer_name="en_stem")
-                wait_for_index(table, f"text_idx")
+                table.create_fts_index(self.TEXT_COLUMN, use_tantivy=False, tokenizer_name="en_stem")
+                wait_for_index(table, f"{self.TEXT_COLUMN}_idx")
 
         metadata_string = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
-        with open(os.path.join(db_path, "metadata.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(db_path, f"{self.METADATA_COLUMN}.json"), "w", encoding="utf-8") as f:
             f.write(metadata_string)
 
         del lance_db
 
     def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
+        print('LanceDB Retrieve')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
@@ -379,44 +363,43 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         return text_chunks, chunks_metadata, (dense_embeddings, [], [])
 
-    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+    def perform_search(self, *, query_string: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('LanceDB Search')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
 
         transformer_library = self.transformer_library
-        query_embedding: List = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
+        query_embedding: np.ndarray = transformer_library.generate_embeddings([query_string], self)[0]  # TYLKO DENSE INDEX 0
 
         from src.enums.database_type_enum import DatabaseFeature
-        #if EmbeddingType.DENSE in
         if EmbeddingType.DENSE.value in vector_choices and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
-            print('HYBRID SEARCH')
+            print('LanceDB HYBRID SEARCH')
             reranker = RRFReranker()
             results = (
-                table.search(query_type="hybrid")
+                table.search(vector_column_name=EmbeddingType.DENSE.value, query_type="hybrid")
                 .vector(query_embedding)
-                .text(query)
+                .text(query_string)
                 .limit(top_k)
                 .select(["text", "source", "fragment_id"])
                 .rerank(reranker)
-                .to_df()
+                .to_pandas()
             )
         elif EmbeddingType.DENSE.value in vector_choices:
-            print('VECTOR SEARCH')
+            print('LanceDB VECTOR SEARCH')
             results = (
-                table.search(query_embedding, EmbeddingType.DENSE.value, query_type="vector")
+                table.search(query=query_embedding, vector_column_name=EmbeddingType.DENSE.value, query_type="vector")
                 .limit(top_k)
                 .select(["text", "source", "fragment_id"])
-                .to_df()
+                .to_pandas()
             )
         elif DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
-            print('FTS SEARCH')
+            print('LanceDB FULL TEXT SEARCH')
             results = (
-                table.search(query, query_type="fts")
+                table.search(query=query_string, query_type="fts")
                 .limit(top_k)
                 .select(["text", "source", "fragment_id"])
-                .to_df()
+                .to_pandas()
             )
 
 
@@ -443,7 +426,12 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 f"(fragment {row['fragment_id']}, {score_val}, model: {self.embedding_model_name})\n"
                 f"{row['text']}\n\n"
             )
-        return response
+        #return response
+
+
+
+
+        #return result_text, result_chunks_metadata, result_scores
 
 class SqliteVectorDatabase(VectorDatabaseInfo):
 
