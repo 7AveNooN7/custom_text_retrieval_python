@@ -440,7 +440,7 @@ def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorD
     return dense_embeddings, sparse_embeddings, colbert_embeddings
 
 def save_to_database(vector_database_instance: VectorDatabaseInfo):
-    print(f'FUNCTION: Save to database')
+    print(f'FUNCTION: save_to_database')
     text_chunks: List[str]
     chunks_metadata: List[ChunkMetadataModel]
     try:
@@ -454,7 +454,8 @@ def save_to_database(vector_database_instance: VectorDatabaseInfo):
     embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]] = generate_embeddings(text_chunks, vector_database_instance)
 
     try:
-        embedding_types_checking(embeddings)
+        print(f'FUNCTION: embedding_types_checking')
+        embedding_types_checking(embeddings, vector_database_instance.float_precision)
     except Exception as e:
         gr.Warning(f"Błąd w sprawdzaniu typów osadzeń: {e}")
         traceback.print_exc()  # Wyświetli pełny stack trace w terminalu

@@ -442,6 +442,8 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         return result_text, result_chunks_metadata, result_scores
 
 class SqliteVectorDatabase(VectorDatabaseInfo):
+    TEXT_COLUMN = "text"
+    METADATA_COLUMN = "metadata"
 
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> Dict[str, Any]:
@@ -481,20 +483,9 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
         return saved_databases
 
-    def create_new_database(
-            self,
-            *,
-            text_chunks: List[str],
-            chunks_metadata: List[dict],
-            hash_ids: List[str],
-            embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]
-    ):
+    def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         def convert_sparse_to_json(sparse_dict):
             return {key: float(value) for key, value in sparse_dict.items()}  # np.float16 -> float
-
-        print(f'dense3: {type(embeddings[0])}')
-        print(f'sparse3: {type(embeddings[1])}')
-        print(f'colbert3: {type(embeddings[2])}')
 
         database_folder = self.get_database_type().db_folder
         os.makedirs(database_folder, exist_ok=True)
@@ -507,10 +498,8 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             cursor.execute(f'''
                 CREATE TABLE IF NOT EXISTS {self.database_name} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT,
-                    text TEXT,
-                    fragment_id INT,
-                    hash_id TEXT,
+                    {self.TEXT_COLUMN} TEXT,
+                    {self.METADATA_COLUMN} TEXT,
                     {EmbeddingType.DENSE.value} BLOB,
                     {EmbeddingType.SPARSE.value} TEXT,
                     {EmbeddingType.COLBERT.value} BLOB,
@@ -531,7 +520,6 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # Dense
                 dense_blob = None
                 if embeddings[0] is not None and embeddings[0].size > 0 and i < len(embeddings[0]):
-                    print(f"📝 Saving embedding {i}: Shape = {embeddings[0][i].shape}")  # Debugging
                     dense_blob = embeddings[0][i].tobytes()
 
                 # Sparse
@@ -546,17 +534,18 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                     colbert_blob = embeddings[2][i].tobytes()
                     colbert_shape = json.dumps(embeddings[2][i].shape)
 
-                source = chunks_metadata[i]['source']
-                text = text_chunks[i]
-                fragment_id = chunks_metadata[i]['fragment_id']
-                hash_id = hash_ids[i]
 
                 cursor.execute(f'''
-                    INSERT INTO {self.database_name} (source, text, fragment_id, hash_id, 
-                    {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
-                    {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (source, text, fragment_id, hash_id, dense_blob, sparse_json, colbert_blob, colbert_shape))
+                    INSERT INTO {self.database_name} (
+                    {self.TEXT_COLUMN}, 
+                    {self.METADATA_COLUMN},
+                    {EmbeddingType.DENSE.value}, 
+                    {EmbeddingType.SPARSE.value}, 
+                    {EmbeddingType.COLBERT.value}, 
+                    {EmbeddingType.COLBERT.value}_shape
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (text_chunks[i], json.dumps(chunks_metadata[i].to_dict()), dense_blob, sparse_json, colbert_blob, colbert_shape))
 
             # Wstawianie metadanych po pętli
             metadata_json = json.dumps(self.to_dict())
@@ -564,7 +553,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
             # Automatyczny commit przy wyjściu z bloku 'with'
 
-    def retrieve_from_database(self) -> Tuple[List, List, List, Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]]:
+    def retrieve_from_database(self) -> Tuple[List[str], List[ChunkMetadataModel], Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]]:
         db_path = os.path.join(self.get_database_type().db_folder, f'{self.database_name}.db')
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
@@ -576,50 +565,45 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
             # Wczytanie embeddingów
             cursor.execute(f'''
-                SELECT source, text, fragment_id, hash_id, 
-                {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
-                {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape 
+                SELECT {self.TEXT_COLUMN}, 
+                 {self.METADATA_COLUMN},
+                 {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
+                 {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape 
                 FROM {self.database_name}
             ''')
             rows = cursor.fetchall()
+            print(rows)
 
             # Inicjalizacja list wynikowych
-            text_chunks: [List[str]] = []
-            chunks_metadata: List[Dict[str, str]] = []
-            hash_ids: List[str] = []
+            text_chunks: List[str] = []
+            chunks_metadata: List[ChunkMetadataModel] = []
             dense_vectors_list: Optional[List[np.ndarray]] = [] if has_dense else None  # Tymczasowa lista na wektory dense
             sparse_embeddings: Optional[List[Dict[str, float]]] = [] if has_sparse else None
             colbert_embeddings: Optional[List[np.ndarray]] = [] if has_colbert else None
 
             # Przetwarzanie danych
             for row in rows:
-                source, text, fragment_id, hash_id, dense_blob, sparse_json, colbert_blob, colbert_shape = row
-
                 # Tekst
-                text_chunks.append(text)
+                text_chunks.append(row[0])
 
                 # Metadane
-                chunks_metadata.append({"source": source, "fragment_id": fragment_id})
-
-                # Hash
-                hash_ids.append(hash_id)
+                chunks_metadata.append(ChunkMetadataModel.from_dict(json.loads(row[1])))
 
                 # Embeddingi z obsługą NULL
                 # Dense
                 if has_dense:
-                    dense_vector = np.frombuffer(dense_blob, dtype=np.float16)
-                    print(f"Dense vector shape: {dense_vector.shape}")
+                    dense_vector = np.frombuffer(row[2], dtype=np.float16)
                     dense_vectors_list.append(dense_vector)
 
                 # Sparse
                 if has_sparse:
-                    sparse_vector = json.loads(sparse_json)  # dict
+                    sparse_vector = json.loads(row[3])  # dict
                     sparse_embeddings.append(sparse_vector)
 
                 # ColBERT
                 if has_colbert:
-                    colbert_shape_tuple = tuple(json.loads(colbert_shape))
-                    colbert_vector = np.frombuffer(colbert_blob, dtype=np.float32).reshape(colbert_shape_tuple)
+                    colbert_shape_tuple = tuple(json.loads(row[4]))
+                    colbert_vector = np.frombuffer(row[5], dtype=np.float16).reshape(colbert_shape_tuple)
                     colbert_embeddings.append(colbert_vector)
 
                 # Konwersja listy dense_vectors_list na np.ndarray
@@ -627,5 +611,5 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 dense_embeddings = np.stack(dense_vectors_list)  # Tworzy tablicę (n, d)
 
             # Zwracanie w formacie tuple[List, List, List, tuple[List, List, List]]
-            return text_chunks, chunks_metadata, hash_ids, (dense_embeddings, sparse_embeddings, colbert_embeddings)
+            return text_chunks, chunks_metadata, (dense_embeddings, sparse_embeddings, colbert_embeddings)
 

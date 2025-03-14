@@ -31,6 +31,7 @@ def perform_search(
         vector_choices: List[str],
         features_choices: List[str]
 ):
+    print(f'FUNCTION: perform_search')
     search_type = get_search_type(search_method=search_method)
     result_text: List[str] = []
     result_chunks_metadata: List[ChunkMetadataModel] = []
@@ -47,7 +48,8 @@ def perform_search(
         text_chunks, chunks_metadata, embeddings = vector_database_instance.retrieve_from_database()
 
         try:
-            embedding_types_checking(embeddings)
+            print(f'FUNCTION: embedding_types_checking')
+            embedding_types_checking(embeddings, vector_database_instance.float_precision)
         except Exception as e:
             gr.Error(f"❌ Błąd w sprawdzaniu typów osadzeń: {e}")
             traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
