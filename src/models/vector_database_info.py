@@ -130,7 +130,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
             collection = chroma_client.get_or_create_collection(name=db_folder_name)
             metadata = collection.metadata or {}
-            # TU JEST PROBLEM
+
             chroma_vector_instance = cls.from_specific_database_metadata(metadata=metadata)
             database_name = chroma_vector_instance.database_name
             saved_databases[database_name] = chroma_vector_instance
@@ -433,8 +433,6 @@ class LanceVectorDatabase(VectorDatabaseInfo):
                 f"{row['text']}\n\n"
             )
         #return response
-
-
 
 
         #return result_text, result_chunks_metadata, result_scores

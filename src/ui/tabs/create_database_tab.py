@@ -364,7 +364,7 @@ def create_database_tab():
                         )
 
                         exceed_limit_radio = gr.Radio(
-                            label='✂️ Exceed chunk length limit',
+                            label='✂️ Exceed chunk and overlap length limit',
                             value=json.dumps(False),
                             choices=[('Yes', json.dumps(True)), ('No', json.dumps(False))],
                             interactive=True
@@ -440,7 +440,6 @@ def handle_create_db(
         features_dict=json.loads(features)  # Zmienna "globalna"
     )
 
-    # 3️⃣ Zmieniamy tekst na "CHUJ" po zakończeniu operacji
     yield gr.update(value="✅ Baza danych została utworzona!", interactive=False)
     time.sleep(2)
     yield gr.update(value="🛠️ Utwórz nową bazę", interactive=True)
@@ -468,33 +467,41 @@ def ui_create_database(
 
     db_engine_enum = None
     if not db_engine_from_dropdown:
-        gr.Warning(f"❌ Nie wybrano silnika bazy danych!")
+        gr.Warning(f"Nie wybrano silnika bazy danych!")
         any_error = True
     else:
         db_engine_enum = DatabaseType.from_display_name(db_engine_from_dropdown)
 
     if not db_name_from_textbox:
-        gr.Warning(f"❌ Nie podano nazwy bazy danych!")
+        gr.Warning(f"Nie podano nazwy bazy danych!")
         any_error = True
     else:
         if not is_valid_db_name(db_name_from_textbox):
-            gr.Warning(f"❌ Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki.")
+            gr.Warning(f"Niepoprawna nazwa bazy! Użyj tylko liter, cyfr, kropek i podkreśleń. Długość: 3-63 znaki.")
             any_error = True
 
     if not files_from_uploader or len(files_from_uploader) == 0:
-        gr.Warning(f"❌ Nie wybrano żadnego pliku do utworzenia bazy danych!")
+        gr.Warning(f"Nie wybrano żadnego pliku do utworzenia bazy danych!")
         any_error = True
 
     model_instance = None
     if not model_json:
-        gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
+        gr.Warning(f"Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
     else:
         model_instance = DownloadedEmbeddingModel.from_dict(json_data=json.loads(model_json))
 
 
     if not selected_library:
-        gr.Warning(f"❌ Nie wyrabo żadnego typu embeddingów!")
+        gr.Warning(f"Nie wybrano żadnego typu embeddingów!")
+        any_error = True
+
+    if chunk_size_from_slider <= 0:
+        gr.Warning(f"Chunk size musi być większy niż 0!")
+        any_error = True
+
+    if chunk_size_from_slider - chunk_overlap_from_slider <= 0:
+        gr.Warning(f"Chunk overlap jest większy niż chunk size!")
         any_error = True
 
 
@@ -519,14 +526,14 @@ def ui_create_database(
 
     max_embeddings_count = chosen_vector_database_info_instance.get_database_type().simultaneous_embeddings
     if len(chosen_vector_database_info_instance.embedding_types) > max_embeddings_count:
-        gr.Warning(f"❌ Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
+        gr.Warning(f"Wybrana baza danych nie obsługuje zapisania więcej embeddings niż {max_embeddings_count}!")
         return None
 
     saved_databases_dict: dict = chosen_vector_database_info_instance.get_saved_databases_from_drive_as_instances()
     saved_database_list = list(saved_databases_dict.keys())
 
     if db_name_from_textbox in saved_database_list:
-        gr.Warning(f"❌ Już istnieje baza danych o takiej nazwie!")
+        gr.Warning(f"Już istnieje baza danych o takiej nazwie!")
         return None
 
 
