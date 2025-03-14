@@ -51,7 +51,7 @@ def split_text_into_characters_chunks_by_characters(text: str, chunk_size: int, 
 
     return chunks
 
-def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: int, chunk_overlap: int, overlaptype: OverlapTypeEnum) -> List[str]:
+def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: int, chunk_overlap: int, overlap_type: OverlapTypeEnum, exceed_limit: bool) -> List[str]:
     """
     Dzieli tekst na fragmenty z bazową długością chunk_size - chunk_overlap*2 (środkowe),
     chunk_size - chunk_overlap (pierwszy i ostatni), zachowując pełne zdania.
@@ -60,6 +60,7 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
     :param text: Tekst wejściowy.
     :param chunk_size: Orientacyjna maksymalna liczba znaków w fragmencie (wliczając spacje).
     :param chunk_overlap: Orientacyjna liczba znaków nakładania się fragmentów.
+    :param overlap_type: Typ overlap
     :return: Lista fragmentów tekstu.
     """
     if chunk_overlap >= chunk_size:
@@ -76,108 +77,16 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
 
     final_chunks = []
 
-    # if overlaptype == OverlapTypeEnum.DOUBLE:
-    #     # Tryb 1: Double overlap "od góry i od dołu"
-    #     # Krok 1: Tworzenie bazowych fragmentów
-    #     base_chunks = []  # Lista, która będzie przechowywać wszystkie bazowe fragmenty
-    #     current_chunk = []  # Aktualny fragment, do którego dodajemy zdania
-    #     current_length = 0  # Aktualna długość current_chunk w znakach (z uwzględnieniem spacji)
-    #     sentence_index = 0  # Indeks bieżącego zdania w liście sentences
-    #
-    #     # Pierwsza pętla: pierwszy fragment
-    #     max_length = chunk_size - chunk_overlap if total_sentences_count > 1 else chunk_size
-    #     while not base_chunks and sentence_index < total_sentences_count:
-    #         sentence = sentences[sentence_index]
-    #         sentence_length = len(sentence)
-    #         overall_length = sentence_length + (1 if current_chunk else 0)
-    #
-    #         # Dodajemy zdanie zawsze, nawet jeśli przekracza max_length
-    #         current_chunk.append(sentence)
-    #         current_length += overall_length
-    #
-    #         # Jeśli przekroczyliśmy max_length i mamy więcej zdań, zamykamy fragment
-    #         if current_length > max_length and sentence_index + 1 < total_sentences_count:
-    #             base_chunks.append(current_chunk)
-    #             current_chunk = []
-    #             current_length = 0
-    #
-    #         sentence_index += 1
-    #
-    #     if current_chunk and not base_chunks:
-    #         base_chunks.append(current_chunk)
-    #         current_chunk = []
-    #         current_length = 0
-    #
-    #     # Druga pętla: środkowe i ostatni fragment
-    #     max_length = chunk_size - chunk_overlap * 2
-    #     while sentence_index < total_sentences_count:
-    #         sentence = sentences[sentence_index]
-    #         sentence_length = len(sentence)
-    #         overall_length = sentence_length + (1 if current_chunk else 0)
-    #         # Dodajemy zdanie zawsze
-    #         current_chunk.append(sentence)
-    #         current_length += overall_length
-    #         # Zamykamy fragment, jeśli przekroczyliśmy max_length i są kolejne zdania
-    #         if current_length > max_length and sentence_index + 1 < total_sentences_count:
-    #             base_chunks.append(current_chunk)
-    #             current_chunk = []
-    #             current_length = 0
-    #         sentence_index += 1
-    #
-    #     if current_chunk:
-    #         base_chunks.append(current_chunk)
-    #
-    #     for i, chunk in enumerate(base_chunks):
-    #         chunk_text = " ".join(chunk)
-    #
-    #         print(f'{i} ({len(chunk_text)}): {chunk_text}')
-    #
-    #     # Krok 2: Dodawanie overlapu "od góry" i "od dołu"
-    #     final_chunks = []
-    #     for i, chunk in enumerate(tqdm(base_chunks, desc="Dodawanie overlapu", unit="chunk")):
-    #         overlap_top = []
-    #         overlap_bottom = []
-    #
-    #         # Overlap "od góry"
-    #         if i > 0:
-    #             prev_chunk = base_chunks[i - 1]
-    #             overlap_length = 0
-    #             for sentence in reversed(prev_chunk):
-    #                 sentence_length = len(sentence) + (1 if overlap_top else 0)
-    #                 overlap_top.insert(0, sentence)
-    #                 overlap_length += sentence_length
-    #                 if overlap_length > chunk_overlap:
-    #                     #print(f'overlap_length: {overlap_length}, fragment: {i}')
-    #                     break
-    #         # Overlap "od dołu"
-    #         if i < len(base_chunks) - 1:
-    #             next_chunk = base_chunks[i + 1]
-    #             overlap_length = 0
-    #             for sentence in next_chunk:
-    #                 sentence_length = len(sentence) + (1 if overlap_bottom else 0)
-    #                 overlap_bottom.append(sentence)
-    #                 overlap_length += sentence_length
-    #                 if overlap_length > chunk_overlap:
-    #                     break
-    #         # Łączenie: overlap_top + chunk + overlap_bottom
-    #         final_chunk = overlap_top + chunk + overlap_bottom
-    #         final_chunks.append(" ".join(final_chunk))
-
-    if overlaptype == OverlapTypeEnum.SLIDING_WINDOW:
-        # Tryb 2: Sliding window z overlapem "od góry"
-        current_chunk = []
-        current_length = 0
-        sentence_index = 0
-
+    current_chunk = []
+    current_length = 0
+    sentence_index = 0
+    if exceed_limit:
         while sentence_index < total_sentences_count:
             sentence = sentences[sentence_index]
-            sentence_length = len(sentence)
-            overall_length = sentence_length + (1 if current_chunk else 0)
-
+            sentence_length = len(sentence) + (1 if current_chunk else 0)
             # Dodajemy zdanie zawsze
             current_chunk.append(sentence)
-            current_length += overall_length
-
+            current_length += sentence_length
             # Zamykamy fragment tylko, jeśli przekroczyliśmy chunk_size i są kolejne zdania
             if current_length > chunk_size and sentence_index + 1 < total_sentences_count:
                 final_chunks.append(" ".join(current_chunk))
@@ -192,23 +101,90 @@ def split_text_into_characters_chunks_by_whole_sentences(text: str, chunk_size: 
                         break
                 current_chunk = overlap_sentences
                 current_length = overlap_length
-
             sentence_index += 1
-
         if current_chunk:
             final_chunks.append(" ".join(current_chunk))
-
-    # for i, chunk in enumerate(final_chunks):
-    #     print(f'{i}: {chunk}')
-
+    elif not exceed_limit:
+        while sentence_index < total_sentences_count:
+            sentence = sentences[sentence_index]
+            sentence_length = len(sentence) + (1 if current_chunk else 0)
+            # Sprawdzamy, czy dodanie zdania nie przekroczy chunk_size
+            if current_length + sentence_length <= chunk_size:
+                current_chunk.append(sentence)
+                current_length += sentence_length
+            else:
+                # Zamykamy bieżący chunk i dodajemy do final_chunks
+                if current_chunk:
+                    final_chunks.append(" ".join(current_chunk))
+                # Tworzymy overlap, ale nie przekraczamy chunk_overlap
+                overlap_length = 0
+                overlap_sentences = []
+                for s in reversed(current_chunk):
+                    s_length = len(s) + (1 if overlap_sentences else 0)
+                    if overlap_length + s_length > chunk_overlap:
+                        break
+                    overlap_sentences.insert(0, s)
+                    overlap_length += s_length
+                # Nowy chunk zaczyna się od overlapa i dodajemy bieżące zdanie
+                current_chunk = overlap_sentences
+                current_length = overlap_length
+                if current_length + sentence_length <= chunk_size:
+                    current_chunk.append(sentence)
+                    current_length += sentence_length
+                else:
+                    # Jeśli nawet z overlapem przekracza, zaczynamy nowy chunk bez overlapa
+                    current_chunk = [sentence]
+                    current_length = sentence_length
+            sentence_index += 1
+        if current_chunk:
+            final_chunks.append(" ".join(current_chunk))
     return final_chunks
 
-
-def split_text_into_token_chunks(
+def split_text_into_tik_token_chunks(
     text: str,
     chunk_size: int,
     chunk_overlap: int,
-    text_segmentation_type: TextSegmentationTypeEnum,
+) -> List[str]:
+    """
+    Dzieli tekst na fragmenty o określonej liczbie tokenów z paskiem postępu.
+
+    :param text: Tekst wejściowy.
+    :param chunk_size: Maksymalna liczba tokenów w każdym fragmencie.
+    :param chunk_overlap: Liczba tokenów nakładania się między fragmentami.
+    :param text_segmentation_type: Typ segmentacji tekstu.
+    :param model_name: Nazwa modelu dla tokenizera.
+    :return: Lista fragmentów tekstu.
+    """
+    # Walidacja parametrów
+    if chunk_size <= 0:
+        raise ValueError("Parametr 'chunk_size' musi być większy od 0!")
+
+    chunks = []
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    tokens = tokenizer.encode(text)
+
+    if not tokens:
+        return [""]
+    if len(tokens) <= chunk_size:
+        return [text]
+
+    step = chunk_size - chunk_overlap
+
+    # Główna pętla dzielenia tokenów
+    for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
+                  unit="chunk", total=math.ceil(len(tokens) / step)):
+        chunk_tokens = tokens[i:i + chunk_size]
+        chunk_text = tokenizer.decode(chunk_tokens)
+        chunks.append(chunk_text)
+
+    return chunks
+
+def split_text_into_model_tokenizer_chunks(
+        *,
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
     model_name: str
 ) -> List[str]:
     """
@@ -227,63 +203,152 @@ def split_text_into_token_chunks(
 
     chunks = []
 
-    # Wybór tokenizera
-    if text_segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN:
-        tokenizer = tiktoken.get_encoding("cl100k_base")
-        tokens = tokenizer.encode(text)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    special_tokens_count = len(tokenizer.encode("", add_special_tokens=True))
+    adjusted_chunk_size = chunk_size - special_tokens_count
+    if adjusted_chunk_size <= 0:
+        raise ValueError("chunk_size jest za mały po uwzględnieniu tokenów specjalnych!")
+    # Tokenizacja z zachowaniem informacji o pozycjach
+    encoding = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+    tokens = encoding.tokens()
+    offsets = encoding.offset_mapping  # Mapowanie pozycji znaków w oryginalnym tekście
 
-        if not tokens:
-            return [""]
-        if len(tokens) <= chunk_size:
-            return [text]
+    if not tokens:
+        return [""]
+    if len(tokens) <= adjusted_chunk_size:
+        return [text]
 
-        step = chunk_size - chunk_overlap
+    step = adjusted_chunk_size - chunk_overlap
 
-        # Główna pętla dzielenia tokenów
-        for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
-                      unit="chunk", total=math.ceil(len(tokens) / step)):
-            chunk_tokens = tokens[i:i + chunk_size]
-            chunk_text = tokenizer.decode(chunk_tokens)
-            chunks.append(chunk_text)
+    for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
+                  unit="chunk", total=math.ceil(len(tokens) / step)):
 
-    elif text_segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        special_tokens_count = len(tokenizer.encode("", add_special_tokens=True))
-        adjusted_chunk_size = chunk_size - special_tokens_count
-        if adjusted_chunk_size <= 0:
-            raise ValueError("chunk_size jest za mały po uwzględnieniu tokenów specjalnych!")
-        # Tokenizacja z zachowaniem informacji o pozycjach
-        encoding = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
-        tokens = encoding.tokens()
-        offsets = encoding.offset_mapping  # Mapowanie pozycji znaków w oryginalnym tekście
+        # Pobierz pozycje startu i końca fragmentu w oryginalnym tekście
+        start_idx = offsets[i][0]  # Początek pierwszego tokenu we fragmencie
+        end_idx = offsets[min(i + adjusted_chunk_size - 1, len(tokens) - 1)][1]  # Koniec ostatniego tokenu
 
-        if not tokens:
-            return [""]
-        if len(tokens) <= adjusted_chunk_size:
-            return [text]
+        # Wyodrębnij oryginalny fragment tekstu
+        chunk_text = text[start_idx:end_idx].strip()
 
-        step = adjusted_chunk_size - chunk_overlap
+        while len(tokenizer.encode(chunk_text, add_special_tokens=True)) > chunk_size:
+            chunk_text = chunk_text[1:]
 
-        for i in tqdm(range(0, len(tokens), step), desc="Token chunks: Przetwarzanie fragmentów",
-                      unit="chunk", total=math.ceil(len(tokens) / step)):
-            chunk_tokens = tokens[i:i + adjusted_chunk_size]
-
-            # Pobierz pozycje startu i końca fragmentu w oryginalnym tekście
-            start_idx = offsets[i][0]  # Początek pierwszego tokenu w fragmencie
-            end_idx = offsets[min(i + adjusted_chunk_size - 1, len(tokens) - 1)][1]  # Koniec ostatniego tokenu
-
-            # Wyodrębnij oryginalny fragment tekstu
-            chunk_text = text[start_idx:end_idx].strip()
-
-            while len(tokenizer.encode(chunk_text, add_special_tokens=True)) > chunk_size:
-                chunk_text = chunk_text[1:]
-
-            chunks.append(chunk_text)
-
-    else:
-        raise Exception("Nieprawidłowy typ segmentacji!")
+        chunks.append(chunk_text)
 
     return chunks
+
+def split_text_into_tokens_chunks_by_whole_sentences(
+    *,
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    exceed_limit: bool,
+    model_name: str,
+    segmentation_type: TextSegmentationTypeEnum
+) -> List[str]:
+    if chunk_overlap >= chunk_size:
+        raise ValueError("Parametr 'chunk_overlap' musi być mniejszy niż 'chunk_size'!")
+    if chunk_size - chunk_overlap * 2 <= 0:
+        raise ValueError("chunk_size - chunk_overlap * 2 musi być większe od 0!")
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+
+    # Podział na zdania
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if not sentences[-1].endswith(('.', '!', '?')):
+        sentences[-1] += '.'
+
+    total_sentences_count = len(sentences)  # Całkowita liczba zdań w tekście
+
+    final_chunks = []
+
+    current_chunk = []
+    sentence_index = 0
+    if exceed_limit:
+        while sentence_index < total_sentences_count:
+            current_sentence = sentences[sentence_index]
+            # Dodajemy zdanie zawsze
+            current_chunk.append(current_sentence)
+            current_sentences_string = " ".join(current_chunk)
+            current_chunk_length = len(tokenizer.encode(current_sentences_string))
+
+            # Zamykamy fragment tylko, jeśli przekroczyliśmy chunk_size i są kolejne zdania
+            if current_chunk_length > chunk_size and sentence_index + 1 < total_sentences_count:
+                final_chunks.append(" ".join(current_chunk))
+                # Przesuwamy okno: bierzemy zdania z końca jako overlap
+                overlap_sentences = []
+                for current_overlap_sentence in reversed(current_chunk):
+                    overlap_sentences.insert(0, current_overlap_sentence)
+                    current_chunk_overlap = " ".join(overlap_sentences)
+                    current_overlap_length = len(tokenizer.encode(current_chunk_overlap))
+                    if current_overlap_length > chunk_overlap:
+                        break
+                current_chunk = overlap_sentences
+            sentence_index += 1
+
+        if current_chunk:
+            final_chunks.append(" ".join(current_chunk))
+
+    elif not exceed_limit:
+        while sentence_index < total_sentences_count:
+            # WYCIĄGAM CURRENT SENTENCE
+            current_sentence = sentences[sentence_index]
+
+            # LICZE DLUGOSC CALEGO CURRENT CHUNKA RAZEM Z CURRENT SENTENCE
+            temp_current_chunk = list(current_chunk)
+            temp_current_chunk.append(current_sentence)
+            temp_current_chunk_string = " ".join(temp_current_chunk)
+            temp_current_chunk_length = len(tokenizer.encode(temp_current_chunk_string))
+
+            # JEZELI DLUGOSC CALEGO CURRENT CHUNKA RAZEM Z CURRENT SENTENCE JEST MNIEJSZA NIZ CHUNK_SIZE TO DODAJE DO CURRENT_CHUNK
+            if temp_current_chunk_length <= chunk_size:
+                current_chunk.append(current_sentence)
+            else:
+                # Zamykamy bieżący chunk i dodajemy do final_chunks
+                if current_chunk:
+                    final_chunks.append(" ".join(current_chunk))
+                # Tworzymy overlap, ale nie przekraczamy chunk_overlap
+                overlap_sentences = []
+                for current_overlap_sentence in reversed(current_chunk):
+                    # LICZE DLUGOSC CALEGO OVERLAP RAZEM Z CURRENT OVERLAP SENTENCE
+                    temp_overlap_sentences = list(overlap_sentences)
+                    temp_overlap_sentences.insert(0, current_overlap_sentence)
+                    temp_overlap_sentences_string = " ".join(temp_overlap_sentences)
+                    temp_overlap_length = len(tokenizer.encode(temp_overlap_sentences_string))
+
+                    if temp_overlap_length > chunk_overlap:
+                        if len(overlap_sentences) == 0:
+                            raise ValueError(
+                                f"Pojedyncze zdanie przekracza dozwolony limit overlap {chunk_overlap} tokenów!\n"
+                                f"Zdanie: {current_overlap_sentence[:60]}..."
+                            )
+                        break
+                    overlap_sentences.insert(0, current_overlap_sentence)
+
+                # Nowy chunk zaczyna się od overlapa i dodajemy bieżące zdanie
+                current_chunk = overlap_sentences
+
+                temp_current_chunk = list(current_chunk)
+                temp_current_chunk.append(current_sentence)
+                temp_current_chunk_string = " ".join(temp_current_chunk)
+                temp_current_chunk_length = len(tokenizer.encode(temp_current_chunk_string))
+
+                if temp_current_chunk_length <= chunk_size:
+                    current_chunk.append(current_sentence)
+                else:
+                    # Jeśli nawet z overlapem przekracza, zaczynamy nowy chunk bez overlapa
+                    current_chunk = [current_sentence]
+                    single_sentence_len = len(tokenizer.encode(current_sentence))
+                    if single_sentence_len > chunk_size:
+                        raise ValueError(
+                            f"Pojedyncze zdanie przekracza dozwolony limit {chunk_size} tokenów!\n"
+                            f"Zdanie: {current_sentence[:60]}..."
+                        )
+            sentence_index += 1
+        if current_chunk:
+            final_chunks.append(" ".join(current_chunk))
+
+    return final_chunks
 
 
 def generate_id(text: str, filename: str, index: int) -> str:
@@ -306,7 +371,8 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
                     whole_text_from_file,
                     vector_database_instance.chunk_size,
                     vector_database_instance.chunk_overlap,
-                    vector_database_instance.overlap_type
+                    vector_database_instance.overlap_type,
+                    vector_database_instance.exceed_limit
                 )
             else:
                 chunks = split_text_into_characters_chunks_by_characters(
@@ -314,17 +380,33 @@ def process_file(file_path: str, vector_database_instance: VectorDatabaseInfo) -
                     vector_database_instance.chunk_size,
                     vector_database_instance.chunk_overlap
                 )
-        else:
-            chunks = split_text_into_token_chunks(
-                whole_text_from_file,
-                vector_database_instance.chunk_size,
-                vector_database_instance.chunk_overlap,
-                vector_database_instance.segmentation_type,
-                vector_database_instance.embedding_model_name
-            )
+        elif (vector_database_instance.segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN or
+              vector_database_instance.segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER):
+            if vector_database_instance.preserve_whole_sentences:
+                chunks = split_text_into_tokens_chunks_by_whole_sentences(
+                    text=whole_text_from_file,
+                    chunk_size=vector_database_instance.chunk_size,
+                    chunk_overlap=vector_database_instance.chunk_overlap,
+                    exceed_limit=vector_database_instance.exceed_limit,
+                    segmentation_type=vector_database_instance.segmentation_type,
+                    model_name=vector_database_instance.embedding_model_name
+                )
+            else:
+                if vector_database_instance.segmentation_type == TextSegmentationTypeEnum.TIK_TOKEN:
+                    chunks = split_text_into_tik_token_chunks(
+                        whole_text_from_file,
+                        vector_database_instance.chunk_size,
+                        vector_database_instance.chunk_overlap,
+                    )
+                elif vector_database_instance.segmentation_type == TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER:
+                    chunks = split_text_into_model_tokenizer_chunks(
+                        text=whole_text_from_file,
+                        chunk_size=vector_database_instance.chunk_size,
+                        chunk_overlap=vector_database_instance.chunk_overlap,
+                        model_name=vector_database_instance.embedding_model_name
+                    )
 
         tiktoken_tokenizer = tiktoken.get_encoding("cl100k_base")
-
         model_tokenizer = AutoTokenizer.from_pretrained(DownloadedEmbeddingModel.build_target_dir(vector_database_instance.embedding_model_name))
 
         # Tworzenie fragmentów i metadanych

@@ -1,14 +1,12 @@
 import traceback
-from typing import List
-
-import numpy as np
 import gradio as gr
+from typing import List
 from src.embeddings_type_checking import embedding_types_checking
 from src.enums.database_type_enum import DatabaseType
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.chunk_metadata_model import ChunkMetadataModel
 from src.models.vector_database_info import VectorDatabaseInfo
-from sentence_transformers import SentenceTransformer, util
+
 
 def get_search_type(*, search_method: str):
     # Sprawdzenie w DatabaseType

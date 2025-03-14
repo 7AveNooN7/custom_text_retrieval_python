@@ -31,6 +31,7 @@ class VectorDatabaseInfo:
             float_precision: FloatPrecisionPointEnum,
             segmentation_type: TextSegmentationTypeEnum,
             preserve_whole_sentences: bool,
+            exceed_limit: bool,
             overlap_type: OverlapTypeEnum,
             chunk_size: int,
             chunk_overlap: int,
@@ -42,6 +43,7 @@ class VectorDatabaseInfo:
         self.embedding_model_name: str = embedding_model_name
         self.segmentation_type: TextSegmentationTypeEnum = segmentation_type
         self.preserve_whole_sentences: bool = preserve_whole_sentences
+        self.exceed_limit: bool = exceed_limit
         self.overlap_type: OverlapTypeEnum = overlap_type
         self.chunk_size: int = chunk_size
         self.chunk_overlap: int = chunk_overlap
@@ -60,6 +62,7 @@ class VectorDatabaseInfo:
             "embedding_model_name": self.embedding_model_name,
             "segmentation_type": self.segmentation_type.value,
             "preserve_whole_sentences": json.dumps(self.preserve_whole_sentences),
+            "exceed_limit": json.dumps(self.exceed_limit),
             "overlap_type": self.overlap_type.value,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
@@ -78,6 +81,7 @@ class VectorDatabaseInfo:
             embedding_model_name=data.get("embedding_model_name", "N/A"),
             segmentation_type=TextSegmentationTypeEnum(data.get("segmentation_type")),
             preserve_whole_sentences=json.loads(data.get("preserve_whole_sentences")),
+            exceed_limit=json.loads(data.get("exceed_limit")),
             overlap_type=OverlapTypeEnum(data.get("overlap_type")),
             chunk_size=data.get("chunk_size", 0),
             chunk_overlap=data.get("chunk_overlap", 0),
@@ -141,6 +145,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             "embedding_model_name": self.embedding_model_name,
             "segmentation_type": self.segmentation_type.value,
             "preserve_whole_sentences": json.dumps(self.preserve_whole_sentences),
+            "exceed_limit": json.dumps(self.exceed_limit),
             "overlap_type": self.overlap_type.value,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
@@ -158,6 +163,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
             embedding_model_name=metadata.get("embedding_model_name", "N/A"),
             segmentation_type=TextSegmentationTypeEnum(metadata.get("segmentation_type")),
             preserve_whole_sentences=json.loads(metadata.get("preserve_whole_sentences")),
+            exceed_limit=json.loads(metadata.get("exceed_limit")),
             overlap_type=OverlapTypeEnum(metadata.get("overlap_type")),
             chunk_size=metadata.get("chunk_size", 0),
             chunk_overlap=metadata.get("chunk_overlap", 0),

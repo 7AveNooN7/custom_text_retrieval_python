@@ -34,10 +34,18 @@ def create_database_tab():
         # STATE
         selected_library_state = gr.State()
         # UPDATE
-        def change_selected_library_state(selected_library_state_arg):
-            if selected_library_state_arg:
-                return selected_library_state_arg
+        def change_selected_library_state(
+                selected_library_state_value,
+                current_library_state_value,
+                selected_database_engine_state_value,
+                model_dropdown_current_choice_state_value
+        ):
+            if selected_library_state_value:
+                return selected_library_state_value
             else:
+                # print(f'current_library_state_value: {current_library_state_value}')
+                # print(f'selected_database_engine_state_value: {selected_database_engine_state_value}')
+                # print(f'model_dropdown_current_choice_state_value: {model_dropdown_current_choice_state_value}')
                 return None
 
         ################  selected_embeddings STATE ################
@@ -105,7 +113,7 @@ def create_database_tab():
                 # ZMIENIA STAN LIBRARY RADIO NA NONE
                 db_engine_dropdown.change(
                     change_selected_library_state,
-                    [gr.State(None)],
+                    [gr.State(None), selected_library_state, selected_database_engine_state, model_dropdown_current_choice_state],
                     [selected_library_state]
                 )
 
@@ -152,7 +160,8 @@ def create_database_tab():
                 # PRZY ZMIANIE MODELU ZERUJE LIBRARY_STATE
                 model_dropdown.change(
                     change_selected_library_state,
-                    [gr.State(None)],
+                    [gr.State(None), selected_library_state, selected_database_engine_state,
+                     model_dropdown_current_choice_state],
                     [selected_library_state]
                 )
 
@@ -184,11 +193,11 @@ def create_database_tab():
                         label='Choose a python embedding library',
                         choices=[supported_library.display_name for supported_library, _ in
                                  model_instance.supported_libraries.items()],
-                        value=None
+                        value=selected_library_state.value
                     )
                     radio.change(
                         change_selected_library_state,
-                        [radio],
+                        [radio, gr.State(None), gr.State(None), gr.State(None)],
                         [selected_library_state]
                     )
 
@@ -313,13 +322,15 @@ def create_database_tab():
                 file_types=[".txt"],
                 scale=1
             )
-            with gr.Column():
+            with gr.Column(
+                scale=1
+            ):
                 chunk_size_slider = gr.Slider(
                     1,
                     1000000,
                     DEFAULT_CHUNK_SIZE,
                     step=100,
-                    label="📏 Chunk length"
+                    label="📏 Chunk length",
                 )
                 chunk_overlap_slider = gr.Slider(
                     1,
@@ -337,21 +348,34 @@ def create_database_tab():
                         label='✂️ Text segmentation type',
                         value=TextSegmentationTypeEnum.TIK_TOKEN.value,
                         choices=[ts.value for ts in TextSegmentationTypeEnum],
-                        interactive=True
+                        interactive=True,
+                        scale=3
                     )
 
-                    preserve_whole_sentences_radio = gr.Radio(
-                        label='✂️ Preserve full sentences',
-                        value=json.dumps(True),
-                        choices=[('Yes', json.dumps(True)), ('No', json.dumps(False))],
-                        interactive=True
-                    )
+                    with gr.Column(
+                        min_width=100,
+                        scale=2
+                    ):
+                        preserve_whole_sentences_radio = gr.Radio(
+                            label='✂️ Preserve full sentences',
+                            value=json.dumps(True),
+                            choices=[('Yes', json.dumps(True)), ('No', json.dumps(False))],
+                            interactive=True
+                        )
+
+                        exceed_limit_radio = gr.Radio(
+                            label='✂️ Exceed chunk length limit',
+                            value=json.dumps(False),
+                            choices=[('Yes', json.dumps(True)), ('No', json.dumps(False))],
+                            interactive=True
+                        )
 
                     overlap_type_radio = gr.Radio(
                         label='✂️ Overlap type',
                         value=OverlapTypeEnum.SLIDING_WINDOW.value,
                         choices=[ov.value for ov in OverlapTypeEnum],
-                        interactive=True
+                        interactive=True,
+                        scale=1
                     )
 
         create_db_btn = gr.Button("🛠️ Create a new database")
@@ -366,6 +390,7 @@ def create_database_tab():
                 file_uploader,
                 segmentation_type_radio,
                 preserve_whole_sentences_radio,
+                exceed_limit_radio,
                 overlap_type_radio,
                 chunk_size_slider,
                 chunk_overlap_slider,
@@ -387,6 +412,7 @@ def handle_create_db(
         files_from_uploader: List[str],
         segmentation_type: str,
         preserve_whole_sentences: str,
+        exceed_limit: str,
         overlap_type: str,
         chunk_size_from_slider: int,
         chunk_overlap_from_slider: int,
@@ -405,6 +431,7 @@ def handle_create_db(
         files_from_uploader=files_from_uploader,
         segmentation_type=segmentation_type,
         preserve_whole_sentences=json.loads(preserve_whole_sentences),
+        exceed_limit=json.loads(exceed_limit),
         overlap_type=overlap_type,
         chunk_size_from_slider=chunk_size_from_slider,
         chunk_overlap_from_slider=chunk_overlap_from_slider,
@@ -427,6 +454,7 @@ def ui_create_database(
         files_from_uploader: List[str],
         segmentation_type: str,
         preserve_whole_sentences: bool,
+        exceed_limit: bool,
         overlap_type: str,
         chunk_size_from_slider: int,
         chunk_overlap_from_slider: int,
@@ -437,6 +465,8 @@ def ui_create_database(
     """Po naciśnięciu przycisku "Szukaj" zbiera dane z UI i tworzy nową bazę danych opartych na tych danych."""
     # Walidacja nazwy bazy
     any_error = False
+
+    db_engine_enum = None
     if not db_engine_from_dropdown:
         gr.Warning(f"❌ Nie wybrano silnika bazy danych!")
         any_error = True
@@ -455,7 +485,7 @@ def ui_create_database(
         gr.Warning(f"❌ Nie wybrano żadnego pliku do utworzenia bazy danych!")
         any_error = True
 
-
+    model_instance = None
     if not model_json:
         gr.Warning(f"❌ Nie wybrano żadnego modelu do utworzenia embeddings!")
         any_error = True
@@ -476,6 +506,7 @@ def ui_create_database(
         embedding_model_name=model_instance.model_name,
         segmentation_type=TextSegmentationTypeEnum(segmentation_type),
         preserve_whole_sentences=preserve_whole_sentences,
+        exceed_limit=exceed_limit,
         overlap_type=OverlapTypeEnum(overlap_type),
         chunk_size=chunk_size_from_slider,
         chunk_overlap=chunk_overlap_from_slider,
