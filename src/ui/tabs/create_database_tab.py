@@ -576,8 +576,6 @@ def get_downloaded_models_for_dropdown() -> List[Tuple[str, str]]:
 def create_downloaded_model_label(model_info: DownloadedEmbeddingModel) -> str:
     model_info_dict = model_info.to_dict()
 
-    print(f'model_info_dict:\n{model_info_dict}')
-
     # Lista do budowy etykiety
     label_parts = [model_info.model_name]
 

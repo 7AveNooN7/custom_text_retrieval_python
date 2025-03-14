@@ -112,10 +112,6 @@ class TransformerLibrary(Enum):
             sparse_embeddings = generated_embeddings.get('lexical_weights', None)
             colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
 
-        print(f'dense: {type(dense_embeddings)}')
-        print(f'sparse: {type(sparse_embeddings)}')
-        print(f'colbert: {type(colbert_embeddings)}')
-
         torch.cuda.empty_cache()
         return dense_embeddings, sparse_embeddings, colbert_embeddings
 

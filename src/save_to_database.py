@@ -440,6 +440,7 @@ def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorD
     return dense_embeddings, sparse_embeddings, colbert_embeddings
 
 def save_to_database(vector_database_instance: VectorDatabaseInfo):
+    print(f'FUNCTION: Save to database')
     text_chunks: List[str]
     chunks_metadata: List[ChunkMetadataModel]
     try:

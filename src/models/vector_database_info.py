@@ -9,6 +9,7 @@ import lancedb
 import numpy as np
 from chromadb.api.types import IncludeEnum
 from lancedb.rerankers import RRFReranker
+from overrides import overrides
 from tqdm import tqdm
 import pyarrow as pa
 import pandas as pd
@@ -176,7 +177,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
         # CHROMA NIE OBSŁUGUJE LIST W METADATA WIEC TRZEBA ZAMIENIC LISTY NA STRINGI
-
+        print('ChromaDB: Create Database')
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
         chroma_client = chromadb.PersistentClient(path=db_path)
@@ -207,7 +208,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         del chroma_client
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
-        print('ChromaDB Search')
+        print('ChromaDB: Search')
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
 
@@ -229,7 +230,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         return result_text, result_chunks_metadata, result_scores
 
     def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
-        print('ChromaDB Retrieve')
+        print('ChromaDB: Retrieve')
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
@@ -284,6 +285,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
+        print('LanceDB: Create Database')
         def wait_for_index(target_table, index_name):
             poll_interval = 10
             while True:
@@ -316,11 +318,16 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         # Sprawdzenie pierwszego rekordu, aby automatycznie określić schemat
         first_record = all_records[0]
 
+        dtype_map: dict[FloatPrecisionPointEnum, any] = {
+            FloatPrecisionPointEnum.FP16: pa.float16(),
+            FloatPrecisionPointEnum.FP32: pa.float32(),
+        }
+
         # Automatyczna definicja schema
         schema_fields = [
-            pa.field(EmbeddingType.DENSE.value, pa.list_(pa.float32(), len(first_record[EmbeddingType.DENSE.value]))),
+            pa.field(EmbeddingType.DENSE.value, pa.list_(dtype_map[self.float_precision], len(first_record[EmbeddingType.DENSE.value]))),
             pa.field(self.TEXT_COLUMN, pa.string()),
-            pa.field(self.METADATA_COLUMN, pa.binary())
+            pa.field(self.METADATA_COLUMN, pa.string())
         ]
 
         # Tworzenie schema na podstawie dynamicznych pól
@@ -349,8 +356,9 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         del lance_db
 
+    @overrides
     def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
-        print('LanceDB Retrieve')
+        print('LanceDB: Retrieve')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
@@ -359,35 +367,35 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         df = table.to_lance().to_table().to_pandas() # BUG W LANCE DB ZE TYLKO 10 REKORDOW ZWRACA
 
         # Rozpakowanie danych do zmiennych
-        text_chunks: List = df['text'].tolist()
+        text_chunks: List[str] = df[self.TEXT_COLUMN].tolist()
         chunks_metadata: List[ChunkMetadataModel] = [
-            ChunkMetadataModel.from_dict(row.to_dict()) for _, row in df.iterrows()
+            ChunkMetadataModel.from_dict(json.loads(row)) for row in df[self.METADATA_COLUMN]
         ]
-        dense_embeddings = [list(embedding) for embedding in df[EmbeddingType.DENSE.value]]
+        dense_embeddings = np.stack(df[EmbeddingType.DENSE.value].tolist(), axis=0)
 
         del lance_db
 
         return text_chunks, chunks_metadata, (dense_embeddings, [], [])
 
-    def perform_search(self, *, query_string: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('LanceDB Search')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
 
         transformer_library = self.transformer_library
-        query_embedding: np.ndarray = transformer_library.generate_embeddings([query_string], self)[0]  # TYLKO DENSE INDEX 0
+        query_embedding: np.ndarray = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
 
         from src.enums.database_type_enum import DatabaseFeature
         if EmbeddingType.DENSE.value in vector_choices and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
             print('LanceDB HYBRID SEARCH')
             reranker = RRFReranker()
             results = (
-                table.search(vector_column_name=EmbeddingType.DENSE.value, query_type="hybrid")
+                table.search(vector_column_name=EmbeddingType.DENSE.value, query_type="hybrid", fts_columns=self.TEXT_COLUMN)
                 .vector(query_embedding)
-                .text(query_string)
+                .text(query)
                 .limit(top_k)
-                .select(["text", "source", "fragment_id"])
+                .select([self.TEXT_COLUMN, self.METADATA_COLUMN])
                 .rerank(reranker)
                 .to_pandas()
             )
@@ -396,46 +404,42 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             results = (
                 table.search(query=query_embedding, vector_column_name=EmbeddingType.DENSE.value, query_type="vector")
                 .limit(top_k)
-                .select(["text", "source", "fragment_id"])
+                .select([self.TEXT_COLUMN, self.METADATA_COLUMN])
                 .to_pandas()
             )
         elif DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
             print('LanceDB FULL TEXT SEARCH')
             results = (
-                table.search(query=query_string, query_type="fts")
+                table.search(query=query, query_type="fts", fts_columns=self.TEXT_COLUMN)
                 .limit(top_k)
-                .select(["text", "source", "fragment_id"])
+                .select([self.TEXT_COLUMN, self.METADATA_COLUMN])
                 .to_pandas()
             )
 
 
-        if "_relevance_score" in results.columns:
-            results = results.sort_values("_relevance_score", ascending=False)
-        elif "_distance" in results.columns:
-            results = results.sort_values("_distance", ascending=True)
-        elif "_score" in results.columns:
-            results = results.sort_values("_score", ascending=False)
+        # if "_relevance_score" in results.columns:
+        #     results = results.sort_values("_relevance_score", ascending=False)
+        # elif "_distance" in results.columns:
+        #     results = results.sort_values("_distance", ascending=True)
+        # elif "_score" in results.columns:
+        #     results = results.sort_values("_score", ascending=False)
 
-            # Budujemy odpowiedź
-        response = ""
-        for idx, row in results.iterrows():
-            if "_relevance_score" in row:
-                score_val = f"relevance score: {row['_relevance_score']:.4f}"
-            elif "_distance" in row:
-                score_val = f"distance: {row['_distance']:.4f}"
-            elif "_score" in row:
-                score_val = f"score: {row['_score']:.4f}"
-            else:
-                score_val = ""
-            response += (
-                f"📄 File: {row['source']} "
-                f"(fragment {row['fragment_id']}, {score_val}, model: {self.embedding_model_name})\n"
-                f"{row['text']}\n\n"
-            )
-        #return response
+        result_text: List[str] = results[self.TEXT_COLUMN].tolist()
+        result_chunks_metadata: List[ChunkMetadataModel] =  [
+            ChunkMetadataModel.from_dict(json.loads(row)) for row in results[self.METADATA_COLUMN].tolist()
+        ]
+        result_scores = None
+
+        score_columns = ["_relevance_score", "_distance", "_score"]
+        for col in score_columns:
+            if col in results.columns:
+                result_scores = results[col].tolist()
+                break
+        else:
+            result_scores = [-99] * len(result_text)
 
 
-        #return result_text, result_chunks_metadata, result_scores
+        return result_text, result_chunks_metadata, result_scores
 
 class SqliteVectorDatabase(VectorDatabaseInfo):
 

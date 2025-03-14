@@ -7,6 +7,8 @@ def embedding_types_checking(embeddings: Tuple[Optional[np.ndarray], Optional[Li
     # Poprawne sprawdzenie typów, uwzględniając możliwość wartości None
     if embeddings[0] is not None and not isinstance(embeddings[0], np.ndarray):
         raise TypeError(f"Dense embeddings bad type! Expected np.ndarray or None, got {type(embeddings[0])}")
+    else:
+        print(f'✅ Dense Type: {type(embeddings[0])}')
 
     if embeddings[1] is not None:
         if not isinstance(embeddings[1], list) or not all(
@@ -14,8 +16,12 @@ def embedding_types_checking(embeddings: Tuple[Optional[np.ndarray], Optional[Li
                 embeddings[1]):
             raise TypeError(
                 f"Sparse embeddings bad type! Expected List[Dict[str, float]] or None, got {type(embeddings[1])}")
+    else:
+        print(f'✅ Sparse Type: {type(embeddings[1])}')
 
     if embeddings[2] is not None:
         if not isinstance(embeddings[2], list) or not all(isinstance(arr, np.ndarray) for arr in embeddings[2]):
             raise TypeError(
                 f"Colbert embeddings bad type! Expected List[np.ndarray] or None, got {type(embeddings[2])}")
+    else:
+        print(f'✅ Colbert Type: {type(embeddings[2])}')
