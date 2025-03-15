@@ -434,7 +434,7 @@ def generate_text_chunks(vector_database_instance: VectorDatabaseInfo) -> tuple[
 
     return texts, metadata
 
-def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
+def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
     transformer_library: TransformerLibrary = vector_database_instance.transformer_library
     dense_embeddings, sparse_embeddings, colbert_embeddings = transformer_library.generate_embeddings(text_chunk, vector_database_instance)
     return dense_embeddings, sparse_embeddings, colbert_embeddings
@@ -455,7 +455,7 @@ def save_to_database(vector_database_instance: VectorDatabaseInfo):
 
     try:
         print(f'FUNCTION: embedding_types_checking')
-        embedding_types_checking(embeddings, vector_database_instance.float_precision)
+        embedding_types_checking(embeddings=embeddings, float_precision=vector_database_instance.float_precision, model_name=vector_database_instance.embedding_model_name)
     except Exception as e:
         gr.Warning(f"Błąd w sprawdzaniu typów osadzeń: {e}")
         traceback.print_exc()  # Wyświetli pełny stack trace w terminalu

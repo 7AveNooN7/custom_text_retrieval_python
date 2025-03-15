@@ -119,10 +119,15 @@ class TransformerLibrary(Enum):
             self, *,
             text_chunks: List[str],
             chunks_metadata: List[ChunkMetadataModel],
-            embeddings: tuple[List, List, List],
+            embeddings: tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]],
             query: str,
-            vector_database_instance: "VectorDatabaseInfo", top_k: int
+            vector_database_instance: "VectorDatabaseInfo",
+            top_k: int,
+            vector_choices: List[str]
     ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
+        result_text: List[str] = []
+        result_chunks_metadata: List[ChunkMetadataModel] = []
+        result_scores: List[float] = []
         if self == TransformerLibrary.SentenceTransformers:
             print('SentenceTransformers Search')
             dense_embeddings = embeddings[0] # ONLY DENSE
@@ -135,27 +140,21 @@ class TransformerLibrary(Enum):
             query_embeddings_tensor = torch.tensor(query_embeddings, dtype=d_type)
 
             result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
-
-            result_text: List[str] = []
-            result_chunks_metadata: List[ChunkMetadataModel] = []
-            result_scores: List[float] = []
             for result_from_dict in result[0]:
                 corpus_id: int = result_from_dict['corpus_id']
                 result_text.append(text_chunks[corpus_id])
                 result_chunks_metadata.append(chunks_metadata[corpus_id])
                 result_scores.append(result_from_dict['score'])
 
-
-            torch.cuda.empty_cache()
             return result_text, result_chunks_metadata, result_scores
 
 
         elif self == TransformerLibrary.FlagEmbedding:
+            # TODO: Implement FlagEmbedding search
             print('FlagEmbedding Search')
             return [], [], []
         else:
             return [], [], []
-
 
 
     @staticmethod

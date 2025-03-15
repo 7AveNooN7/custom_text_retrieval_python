@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import pickle
 import sqlite3
 import time
 from typing import List, Dict, Any, Tuple, Optional
@@ -484,8 +485,6 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
         return saved_databases
 
     def create_new_database(self, *, text_chunks: List[str], chunks_metadata: List[ChunkMetadataModel], embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]):
-        def convert_sparse_to_json(sparse_dict):
-            return {key: float(value) for key, value in sparse_dict.items()}  # np.float16 -> float
 
         database_folder = self.get_database_type().db_folder
         os.makedirs(database_folder, exist_ok=True)
@@ -501,7 +500,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                     {self.TEXT_COLUMN} TEXT,
                     {self.METADATA_COLUMN} TEXT,
                     {EmbeddingType.DENSE.value} BLOB,
-                    {EmbeddingType.SPARSE.value} TEXT,
+                    {EmbeddingType.SPARSE.value} BLOB,
                     {EmbeddingType.COLBERT.value} BLOB,
                     {EmbeddingType.COLBERT.value}_shape TEXT
                 )
@@ -523,15 +522,15 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                     dense_blob = embeddings[0][i].tobytes()
 
                 # Sparse
-                sparse_json = None
+                sparse_blob = None
                 if embeddings[1] is not None and i < len(embeddings[1]):
-                    sparse_json = json.dumps(convert_sparse_to_json(embeddings[1][i]))
+                    sparse_blob = pickle.dumps({k: np.float16(v) for k, v in embeddings[1][i].items()}) #TODO: FP types
 
                 # ColBERT
                 colbert_blob = None
                 colbert_shape = None
                 if embeddings[2] is not None and i < len(embeddings[2]):
-                    colbert_blob = embeddings[2][i].tobytes()
+                    colbert_blob = embeddings[2][i].astype(np.float16).tobytes() #TODO: FP types
                     colbert_shape = json.dumps(embeddings[2][i].shape)
 
 
@@ -545,7 +544,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                     {EmbeddingType.COLBERT.value}_shape
                     )
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (text_chunks[i], json.dumps(chunks_metadata[i].to_dict()), dense_blob, sparse_json, colbert_blob, colbert_shape))
+                ''', (text_chunks[i], json.dumps(chunks_metadata[i].to_dict()), dense_blob, sparse_blob, colbert_blob, colbert_shape))
 
             # Wstawianie metadanych po pętli
             metadata_json = json.dumps(self.to_dict())
@@ -572,7 +571,6 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 FROM {self.database_name}
             ''')
             rows = cursor.fetchall()
-            print(rows)
 
             # Inicjalizacja list wynikowych
             text_chunks: List[str] = []
@@ -592,18 +590,18 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # Embeddingi z obsługą NULL
                 # Dense
                 if has_dense:
-                    dense_vector = np.frombuffer(row[2], dtype=np.float16)
+                    dense_vector = np.frombuffer(row[2], dtype=np.float16) #TODO: FP types
                     dense_vectors_list.append(dense_vector)
 
                 # Sparse
                 if has_sparse:
-                    sparse_vector = json.loads(row[3])  # dict
+                    sparse_vector = pickle.loads(row[3])
                     sparse_embeddings.append(sparse_vector)
 
                 # ColBERT
                 if has_colbert:
-                    colbert_shape_tuple = tuple(json.loads(row[4]))
-                    colbert_vector = np.frombuffer(row[5], dtype=np.float16).reshape(colbert_shape_tuple)
+                    colbert_shape_tuple = tuple(json.loads(row[5]))
+                    colbert_vector = np.frombuffer(row[4], dtype=np.float16).reshape(colbert_shape_tuple) # TODO: FP types
                     colbert_embeddings.append(colbert_vector)
 
                 # Konwersja listy dense_vectors_list na np.ndarray

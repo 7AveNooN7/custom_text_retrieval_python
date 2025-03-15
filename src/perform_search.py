@@ -1,6 +1,9 @@
 import traceback
 import gradio as gr
-from typing import List
+from typing import List, Optional, Tuple
+
+import numpy as np
+
 from src.embeddings_type_checking import embedding_types_checking
 from src.enums.database_type_enum import DatabaseType
 from src.enums.transformer_library_enum import TransformerLibrary
@@ -43,13 +46,13 @@ def perform_search(
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
         chunks_metadata: List[ChunkMetadataModel]
-        embeddings: tuple[List, List, List] #Dense, Sparse, Colbert
+        embeddings: tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]
 
         text_chunks, chunks_metadata, embeddings = vector_database_instance.retrieve_from_database()
 
         try:
             print(f'FUNCTION: embedding_types_checking')
-            embedding_types_checking(embeddings, vector_database_instance.float_precision)
+            embedding_types_checking(embeddings=embeddings, float_precision=vector_database_instance.float_precision, model_name=vector_database_instance.embedding_model_name)
         except Exception as e:
             gr.Error(f"❌ Błąd w sprawdzaniu typów osadzeń: {e}")
             traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
@@ -61,7 +64,8 @@ def perform_search(
             embeddings=embeddings,
             query=query,
             vector_database_instance=vector_database_instance,
-            top_k=top_k
+            top_k=top_k,
+            vector_choices=vector_choices
         )
 
     for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
