@@ -13,12 +13,6 @@ def embedding_types_checking(*,
         float_precision: FloatPrecisionPointEnum,
         model_name: str
 ):
-    dtype_map: dict[FloatPrecisionPointEnum, any] = {
-        FloatPrecisionPointEnum.FP16: np.float16,
-        FloatPrecisionPointEnum.FP32: np.float32,
-    }
-    expected_float_type = dtype_map[float_precision]
-
     config = AutoConfig.from_pretrained(DownloadedEmbeddingModel.build_target_dir(model_name))
     expected_dense_dim = config.hidden_size
 
@@ -28,8 +22,8 @@ def embedding_types_checking(*,
             raise TypeError(f"Dense embeddings bad type! Expected np.ndarray or None, got {type(embeddings[0])}")
 
         # Dodatkowe sprawdzenia
-        if embeddings[0].dtype != expected_float_type:
-            raise TypeError(f"Dense embeddings bad dtype! Expected {expected_float_type}, got {embeddings[0].dtype}")
+        if embeddings[0].dtype != float_precision.dtype:
+            raise TypeError(f"Dense embeddings bad dtype! Expected {float_precision.dtype}, got {embeddings[0].dtype}")
 
         if embeddings[0].ndim != 2:
             raise TypeError(f"Dense embeddings bad shape! Expected 2D array, got {embeddings[0].ndim}D")
@@ -51,8 +45,10 @@ def embedding_types_checking(*,
             for k, v in d.items():
                 if not isinstance(k, str):
                     raise TypeError(f"Sparse embeddings bad type! Key {k} in item {i} is {type(k)}, expected str")
-                if not isinstance(v, expected_float_type):
-                    raise TypeError(f"Sparse embeddings bad type! Value {v} in item {i} is {type(v)}, expected {expected_float_type}")
+                if not isinstance(v, float_precision.dtype
+                                  ):
+                    raise TypeError(f"Sparse embeddings bad type! Value {v} in item {i} is {type(v)}, expected {float_precision.dtype
+                    }")
         print(f'✅ Sparse Type: {type(embeddings[1])}')
     else:
         print(f'✅ Sparse Type: {type(embeddings[1])}')

@@ -250,6 +250,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         chunks_metadata = results[IncludeEnum.metadatas.value]
         chunks_metadata_models: List[ChunkMetadataModel] = [ChunkMetadataModel.from_dict(meta) for meta in chunks_metadata]
         dense_embeddings = results[IncludeEnum.embeddings.value]
+        dense_embeddings = np.array(dense_embeddings, dtype=self.float_precision.dtype)
 
         del chroma_client
 
@@ -259,6 +260,11 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 class LanceVectorDatabase(VectorDatabaseInfo):
     TEXT_COLUMN = "text"
     METADATA_COLUMN = "metadata"
+
+    dtype_pa_map: dict[FloatPrecisionPointEnum, any] = {
+        FloatPrecisionPointEnum.FP16: pa.float16(),
+        FloatPrecisionPointEnum.FP32: pa.float32(),
+    }
 
     @classmethod
     def get_saved_databases_from_drive_as_instances(cls) -> dict[str, Any]:
@@ -319,14 +325,10 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         # Sprawdzenie pierwszego rekordu, aby automatycznie określić schemat
         first_record = all_records[0]
 
-        dtype_map: dict[FloatPrecisionPointEnum, any] = {
-            FloatPrecisionPointEnum.FP16: pa.float16(),
-            FloatPrecisionPointEnum.FP32: pa.float32(),
-        }
 
-        # Automatyczna definicja schema
+        # Automatyczna definicja schema, TO ZOSTAJE self.dtype_pa_map[self.float_precision] bo trzeba typ pa a nie np
         schema_fields = [
-            pa.field(EmbeddingType.DENSE.value, pa.list_(dtype_map[self.float_precision], len(first_record[EmbeddingType.DENSE.value]))),
+            pa.field(EmbeddingType.DENSE.value, pa.list_(self.dtype_pa_map[self.float_precision], len(first_record[EmbeddingType.DENSE.value]))),
             pa.field(self.TEXT_COLUMN, pa.string()),
             pa.field(self.METADATA_COLUMN, pa.string())
         ]
@@ -358,7 +360,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         del lance_db
 
     @overrides
-    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, List[ChunkMetadataModel], List]]:
         print('LanceDB: Retrieve')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
@@ -372,7 +374,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         chunks_metadata: List[ChunkMetadataModel] = [
             ChunkMetadataModel.from_dict(json.loads(row)) for row in df[self.METADATA_COLUMN]
         ]
-        dense_embeddings = np.stack(df[EmbeddingType.DENSE.value].tolist(), axis=0)
+        dense_embeddings = np.stack(df[EmbeddingType.DENSE.value].tolist(), axis=0).astype(self.float_precision.dtype)
 
         del lance_db
 
@@ -524,13 +526,13 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # Sparse
                 sparse_blob = None
                 if embeddings[1] is not None and i < len(embeddings[1]):
-                    sparse_blob = pickle.dumps({k: np.float16(v) for k, v in embeddings[1][i].items()}) #TODO: FP types
+                    sparse_blob = pickle.dumps({k: self.float_precision.dtype(v) for k, v in embeddings[1][i].items()})
 
                 # ColBERT
                 colbert_blob = None
                 colbert_shape = None
                 if embeddings[2] is not None and i < len(embeddings[2]):
-                    colbert_blob = embeddings[2][i].astype(np.float16).tobytes() #TODO: FP types
+                    colbert_blob = embeddings[2][i].astype(self.float_precision.dtype).tobytes()
                     colbert_shape = json.dumps(embeddings[2][i].shape)
 
 
@@ -590,7 +592,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # Embeddingi z obsługą NULL
                 # Dense
                 if has_dense:
-                    dense_vector = np.frombuffer(row[2], dtype=np.float16) #TODO: FP types
+                    dense_vector = np.frombuffer(row[2], dtype=self.float_precision.dtype)
                     dense_vectors_list.append(dense_vector)
 
                 # Sparse
@@ -601,7 +603,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # ColBERT
                 if has_colbert:
                     colbert_shape_tuple = tuple(json.loads(row[5]))
-                    colbert_vector = np.frombuffer(row[4], dtype=np.float16).reshape(colbert_shape_tuple) # TODO: FP types
+                    colbert_vector = np.frombuffer(row[4], dtype=self.float_precision.dtype).reshape(colbert_shape_tuple)
                     colbert_embeddings.append(colbert_vector)
 
                 # Konwersja listy dense_vectors_list na np.ndarray

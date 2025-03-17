@@ -79,6 +79,7 @@ class TransformerLibrary(Enum):
         Generate embeddings based on the enum type and requested embedding type.
         transformer_library: TransformerLibrary = vector_database_instance.transformer_library
         """
+        print(f'{self.value}: Create Embeddings')
         list_of_embeddings_to_create = vector_database_instance.embedding_types
 
         dense_embeddings: Optional[np.ndarray] = None
@@ -152,7 +153,54 @@ class TransformerLibrary(Enum):
         elif self == TransformerLibrary.FlagEmbedding:
             # TODO: Implement FlagEmbedding search
             print('FlagEmbedding Search')
-            return [], [], []
+            dense_embeddings, sparse_embeddings, colbert_embeddings = embeddings  # Rozpakowujemy krotkę embeddingów
+            query_output = self.generate_embeddings([query], vector_database_instance)  # Generujemy embeddingi dla zapytania
+            query_dense = query_output[0]  # Dense embedding dla zapytania
+            query_sparse = query_output[1]  # Sparse embedding dla zapytania
+            query_colbert = query_output[2]  # ColBERT embedding dla zapytania
+
+            d_type = vector_database_instance.float_precision.dtype
+
+            from FlagEmbedding import BGEM3FlagModel
+            model = BGEM3FlagModel(vector_database_instance.embedding_model_name, use_fp16=(d_type == torch.float16))
+
+
+
+            for vector_choice in vector_choices:
+                # DENSE
+                if vector_choice == EmbeddingType.DENSE.value and dense_embeddings is not None:
+                    dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=d_type)
+                    query_dense_tensor = torch.tensor(query_dense, dtype=d_type)
+                    result = util.semantic_search(query_dense_tensor, dense_embeddings_tensor, top_k=top_k)
+                    for res in result[0]:
+                        corpus_id = res['corpus_id']
+                        result_text.append(text_chunks[corpus_id])
+                        result_chunks_metadata.append(chunks_metadata[corpus_id])
+                        result_scores.append(res['score'])
+
+                # SPARSE
+                elif vector_choice == EmbeddingType.SPARSE.value and sparse_embeddings is not None:
+                    scores = [model.compute_lexical_matching_score(query_sparse[0], sparse_emb) for sparse_emb in
+                              sparse_embeddings]
+                    top_k_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+                    for idx in top_k_indices:
+                        result_text.append(text_chunks[idx])
+                        result_chunks_metadata.append(chunks_metadata[idx])
+                        result_scores.append(scores[idx])
+
+                # COLBERT
+                elif vector_choice == EmbeddingType.COLBERT.value and colbert_embeddings is not None:
+                    from FlagEmbedding import BGEM3FlagModel
+                    model = BGEM3FlagModel(vector_database_instance.embedding_model_name, use_fp16=(d_type == torch.float16))
+                    # Obliczamy wyniki dla ColBERT
+                    scores = [model.colbert_score(query_colbert[0], colbert_emb) for colbert_emb in colbert_embeddings]
+                    top_k_indices = torch.topk(torch.tensor(scores), k=top_k).indices.tolist()
+                    top_k_scores = torch.topk(torch.tensor(scores), k=top_k).values.tolist()
+                    for idx, score in zip(top_k_indices, top_k_scores):
+                        result_text.append(text_chunks[idx])
+                        result_chunks_metadata.append(chunks_metadata[idx])
+                        result_scores.append(score)
+            return result_text, result_chunks_metadata, result_scores
         else:
             return [], [], []
 
