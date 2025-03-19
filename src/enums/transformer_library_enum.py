@@ -129,16 +129,15 @@ class TransformerLibrary(Enum):
         result_text: List[str] = []
         result_chunks_metadata: List[ChunkMetadataModel] = []
         result_scores: List[float] = []
+
         if self == TransformerLibrary.SentenceTransformers:
             print('SentenceTransformers Search')
             dense_embeddings = embeddings[0] # ONLY DENSE
             query_embeddings = self.generate_embeddings([query], vector_database_instance)[0] # ONLY DENSE
 
-            floating_precision = vector_database_instance.float_precision
-            d_type = torch.float32 if floating_precision == FloatPrecisionPointEnum.FP32 else torch.float16
 
-            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=d_type)
-            query_embeddings_tensor = torch.tensor(query_embeddings, dtype=d_type)
+            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
+            query_embeddings_tensor = torch.tensor(query_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
 
             result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
             for result_from_dict in result[0]:
@@ -159,18 +158,16 @@ class TransformerLibrary(Enum):
             query_sparse = query_output[1]  # Sparse embedding dla zapytania
             query_colbert = query_output[2]  # ColBERT embedding dla zapytania
 
-            d_type = vector_database_instance.float_precision.dtype
+            torch_d_type = vector_database_instance.float_precision.torch_dtype
 
-            from FlagEmbedding import BGEM3FlagModel
-            model = BGEM3FlagModel(vector_database_instance.embedding_model_name, use_fp16=(d_type == torch.float16))
-
-
+            selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+            model = BGEM3FlagModel(selected_model_path, use_fp16=(torch_d_type == torch.float16))
 
             for vector_choice in vector_choices:
                 # DENSE
                 if vector_choice == EmbeddingType.DENSE.value and dense_embeddings is not None:
-                    dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=d_type)
-                    query_dense_tensor = torch.tensor(query_dense, dtype=d_type)
+                    dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
+                    query_dense_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
                     result = util.semantic_search(query_dense_tensor, dense_embeddings_tensor, top_k=top_k)
                     for res in result[0]:
                         corpus_id = res['corpus_id']
@@ -190,8 +187,6 @@ class TransformerLibrary(Enum):
 
                 # COLBERT
                 elif vector_choice == EmbeddingType.COLBERT.value and colbert_embeddings is not None:
-                    from FlagEmbedding import BGEM3FlagModel
-                    model = BGEM3FlagModel(vector_database_instance.embedding_model_name, use_fp16=(d_type == torch.float16))
                     # Obliczamy wyniki dla ColBERT
                     scores = [model.colbert_score(query_colbert[0], colbert_emb) for colbert_emb in colbert_embeddings]
                     top_k_indices = torch.topk(torch.tensor(scores), k=top_k).indices.tolist()
