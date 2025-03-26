@@ -230,7 +230,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         return result_text, result_chunks_metadata, result_scores
 
-    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[List, List, List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, List, List]]:
         print('ChromaDB: Retrieve')
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
@@ -431,7 +431,6 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         result_chunks_metadata: List[ChunkMetadataModel] =  [
             ChunkMetadataModel.from_dict(json.loads(row)) for row in results[self.METADATA_COLUMN].tolist()
         ]
-        result_scores = None
 
         score_columns = ["_relevance_score", "_distance", "_score"]
         for col in score_columns:
@@ -554,7 +553,8 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
 
             # Automatyczny commit przy wyjściu z bloku 'with'
 
-    def retrieve_from_database(self) -> Tuple[List[str], List[ChunkMetadataModel], Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]]:
+    def retrieve_from_database(self) -> Tuple[
+        List[str], List[ChunkMetadataModel], Tuple[np.ndarray, List[dict[str, float]], List[np.ndarray]]]:
         db_path = os.path.join(self.get_database_type().db_folder, f'{self.database_name}.db')
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
@@ -567,9 +567,11 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             # Wczytanie embeddingów
             cursor.execute(f'''
                 SELECT {self.TEXT_COLUMN}, 
-                 {self.METADATA_COLUMN},
-                 {EmbeddingType.DENSE.value}, {EmbeddingType.SPARSE.value}, 
-                 {EmbeddingType.COLBERT.value}, {EmbeddingType.COLBERT.value}_shape 
+                       {self.METADATA_COLUMN},
+                       {EmbeddingType.DENSE.value}, 
+                       {EmbeddingType.SPARSE.value}, 
+                       {EmbeddingType.COLBERT.value}, 
+                       {EmbeddingType.COLBERT.value}_shape 
                 FROM {self.database_name}
             ''')
             rows = cursor.fetchall()
@@ -577,19 +579,18 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             # Inicjalizacja list wynikowych
             text_chunks: List[str] = []
             chunks_metadata: List[ChunkMetadataModel] = []
-            dense_vectors_list: Optional[List[np.ndarray]] = [] if has_dense else None  # Tymczasowa lista na wektory dense
+            dense_vectors_list: Optional[List[np.ndarray]] = [] if has_dense else None
             sparse_embeddings: Optional[List[Dict[str, float]]] = [] if has_sparse else None
             colbert_embeddings: Optional[List[np.ndarray]] = [] if has_colbert else None
 
-            # Przetwarzanie danych
-            for row in rows:
+            # Przetwarzanie danych z progresbarem
+            for row in tqdm(rows, desc="Przetwarzanie wierszy z bazy"):
                 # Tekst
                 text_chunks.append(row[0])
 
                 # Metadane
                 chunks_metadata.append(ChunkMetadataModel.from_dict(json.loads(row[1])))
 
-                # Embeddingi z obsługą NULL
                 # Dense
                 if has_dense:
                     dense_vector = np.frombuffer(row[2], dtype=self.float_precision.numpy_dtype)
@@ -603,13 +604,14 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # ColBERT
                 if has_colbert:
                     colbert_shape_tuple = tuple(json.loads(row[5]))
-                    colbert_vector = np.frombuffer(row[4], dtype=self.float_precision.numpy_dtype).reshape(colbert_shape_tuple)
+                    colbert_vector = np.frombuffer(row[4], dtype=self.float_precision.numpy_dtype).reshape(
+                        colbert_shape_tuple)
                     colbert_embeddings.append(colbert_vector)
 
-                # Konwersja listy dense_vectors_list na np.ndarray
-            if dense_vectors_list:
-                dense_embeddings = np.stack(dense_vectors_list)  # Tworzy tablicę (n, d)
+            # Konwersja listy dense_vectors_list na np.ndarray
+            dense_embeddings = None
+            if has_dense and dense_vectors_list:
+                dense_embeddings = np.stack(dense_vectors_list)
 
-            # Zwracanie w formacie tuple[List, List, List, tuple[List, List, List]]
             return text_chunks, chunks_metadata, (dense_embeddings, sparse_embeddings, colbert_embeddings)
 
