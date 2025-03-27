@@ -74,166 +74,6 @@ class TransformerLibrary(Enum):
 
         return selected_model_path
 
-    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
-        """
-        Generate embeddings based on the enum type and requested embedding type.
-        transformer_library: TransformerLibrary = vector_database_instance.transformer_library
-        """
-        print(f'TRANSFORMER LIB FUNCTION: Generate Embeddings')
-        list_of_embeddings_to_create = vector_database_instance.embedding_types
-
-        dense_embeddings: Optional[np.ndarray] = None
-        sparse_embeddings: Optional[List[dict[str, float]]] = None
-        colbert_embeddings: Optional[List[np.ndarray]] = None
-
-        selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
-        if self == TransformerLibrary.SentenceTransformers:
-            print(f'SentenceTransformers: Generate Embeddings')
-            if vector_database_instance.float_precision == FloatPrecisionPointEnum.FP32:
-                embedding_model = SentenceTransformer(
-                    selected_model_path
-                )
-            elif vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16:
-                embedding_model = SentenceTransformer(
-                    selected_model_path
-                ).half()
-
-            dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True, convert_to_numpy=True)
-
-        elif self == TransformerLibrary.FlagEmbedding:
-            print(f'FlagEmbedding: Generate Embeddings')
-            embedding_model = BGEM3FlagModel(selected_model_path, use_fp16=(vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16))
-
-            # WEKTORY ZNORMALIZOWANE WYRZUCA (DENSE)
-            generated_embeddings = embedding_model.encode(
-                sentences=text_chunks,
-                return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,
-                return_sparse=EmbeddingType.SPARSE in list_of_embeddings_to_create,
-                return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create,
-            )
-
-            dense_embeddings = generated_embeddings.get('dense_vecs', None)
-            sparse_embeddings = generated_embeddings.get('lexical_weights', None)
-            colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
-
-        return dense_embeddings, sparse_embeddings, colbert_embeddings
-
-    def perform_search(
-            self, *,
-            text_chunks: List[str],
-            chunks_metadata: List[ChunkMetadataModel],
-            embeddings: tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]],
-            query: str,
-            vector_database_instance: "VectorDatabaseInfo",
-            top_k: int,
-            vector_choices: List[str]
-    ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
-        result_text: List[str] = []
-        result_chunks_metadata: List[ChunkMetadataModel] = []
-        result_scores: List[float] = []
-
-        query_output: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[
-            List[np.ndarray]]] = self.generate_embeddings([query],
-                                                          vector_database_instance)  # Generujemy embeddingi dla zapytania
-
-        if self == TransformerLibrary.SentenceTransformers:
-            print('SentenceTransformers Search')
-            dense_embeddings = embeddings[0] # ONLY DENSE
-            query_dense = query_output[0]
-
-            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
-            query_embeddings_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
-
-            result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
-            for result_from_dict in result[0]:
-                corpus_id: int = result_from_dict['corpus_id']
-                result_text.append(text_chunks[corpus_id])
-                result_chunks_metadata.append(chunks_metadata[corpus_id])
-                result_scores.append(result_from_dict['score'])
-
-            return result_text, result_chunks_metadata, result_scores
-
-
-        elif self == TransformerLibrary.FlagEmbedding:
-            # TODO: Implement FlagEmbedding search
-            print('FlagEmbedding: Search')
-            dense_embeddings, sparse_embeddings, colbert_embeddings = embeddings  # Rozpakowujemy krotkę embeddingów
-
-            query_dense = query_output[0]  # Dense embedding dla zapytania
-            query_sparse = query_output[1]  # Sparse embedding dla zapytania
-            query_colbert = query_output[2]  # ColBERT embedding dla zapytania
-
-            torch_d_type = vector_database_instance.float_precision.torch_dtype
-            numpy_d_type = vector_database_instance.float_precision.numpy_dtype
-
-            selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
-            model = BGEM3FlagModel(selected_model_path, use_fp16=(torch_d_type == torch.float16))
-
-            for vector_choice in vector_choices:
-                # DENSE
-                if vector_choice == EmbeddingType.DENSE.value and dense_embeddings is not None:
-                    print('FlagEmbedding: DENSE Search')
-                    dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
-                    query_dense_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
-                    dense_score = model.model.compute_dense_score(query_dense_tensor, dense_embeddings_tensor)
-                    print(f'dense_score: {dense_score}')
-                    dense_score = dense_score.squeeze(0) # BO TYLKO JEDEN TENSOR ZAPYTANIA
-
-                    # Znalezienie top-k indeksów i wyników (np. top_k = 5)
-                    top_k_values, top_k_indices = torch.topk(dense_score, k=top_k, largest=True)
-
-                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Get the corpus index
-                        result_text.append(text_chunks[corpus_id])  # Text of the chunk
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadata of the chunk
-                        result_scores.append(top_k_values[i].item())  # Corresponding similarity score
-
-                # SPARSE
-                elif vector_choice == EmbeddingType.SPARSE.value and sparse_embeddings is not None:
-                    print('FlagEmbedding: SPARSE Search')
-                    sparse_scores = model.compute_lexical_matching_score(query_sparse, sparse_embeddings)
-                    sparse_scores = sparse_scores.flatten()
-                    sparse_scores_tensor = torch.from_numpy(sparse_scores)
-                    top_k_values, top_k_indices = torch.topk(sparse_scores_tensor, k=top_k, largest=True)
-                    print(f'sparse_scores ({sparse_scores_tensor.dtype}): {sparse_scores_tensor}')
-
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu w sparse_embeddings
-                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
-                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
-
-                # COLBERT
-                elif vector_choice == EmbeddingType.COLBERT.value and colbert_embeddings is not None:
-                    # Obliczamy wyniki dla ColBERT
-                    print('FlagEmbedding: COLBERT Search')
-                    colbert_scores = []
-                    query_array = query_colbert[0]
-                    for chunk_embedding in colbert_embeddings:
-                        colbert_scores.append(model.colbert_score(query_array, chunk_embedding))
-
-                    # Konwersja listy wyników na tensor PyTorch z określonym typem danych
-                    colbert_scores_tensor = torch.tensor(colbert_scores)
-                    # Znalezienie top-k indeksów i wyników
-                    top_k_values, top_k_indices = torch.topk(colbert_scores_tensor, k=top_k, largest=True)
-                    # Przygotowanie list wynikowych
-                    result_text = []
-                    result_chunks_metadata = []
-                    result_scores = []
-                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu
-                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
-                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
-
-
-            return result_text, result_chunks_metadata, result_scores
-        else:
-            return [], [], []
-
-
     @staticmethod
     def is_sentence_transformer_model(target_dir: str, model_name: str) -> dict:
         print('⚙️ SentenceTransformers library Test')
@@ -287,7 +127,6 @@ class TransformerLibrary(Enum):
             print("❌ Model nie obsługuje SentenceTransformers - wystąpił błąd.")
             print(f'Błąd: {e}')
             return {}
-
 
     @staticmethod
     def is_flag_embedding_model(target_dir: str, model_name: str) -> dict:
@@ -537,6 +376,167 @@ class TransformerLibrary(Enum):
             return {}
 
         return basic_dict
+
+    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
+        """
+        Generate embeddings based on the enum type and requested embedding type.
+        transformer_library: TransformerLibrary = vector_database_instance.transformer_library
+        """
+        print(f'TRANSFORMER LIB FUNCTION: Generate Embeddings')
+        list_of_embeddings_to_create = vector_database_instance.embedding_types
+
+        dense_embeddings: Optional[np.ndarray] = None
+        sparse_embeddings: Optional[List[dict[str, float]]] = None
+        colbert_embeddings: Optional[List[np.ndarray]] = None
+
+        selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+        if self == TransformerLibrary.SentenceTransformers:
+            print(f'SentenceTransformers: Generate Embeddings')
+            if vector_database_instance.float_precision == FloatPrecisionPointEnum.FP32:
+                embedding_model = SentenceTransformer(
+                    selected_model_path
+                )
+            elif vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16:
+                embedding_model = SentenceTransformer(
+                    selected_model_path
+                ).half()
+
+            dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True, convert_to_numpy=True)
+
+        elif self == TransformerLibrary.FlagEmbedding:
+            print(f'FlagEmbedding: Generate Embeddings')
+            embedding_model = BGEM3FlagModel(selected_model_path, use_fp16=(vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16))
+
+            # WEKTORY ZNORMALIZOWANE WYRZUCA (DENSE)
+            generated_embeddings = embedding_model.encode(
+                sentences=text_chunks,
+                return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,
+                return_sparse=EmbeddingType.SPARSE in list_of_embeddings_to_create,
+                return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create,
+            )
+
+            dense_embeddings = generated_embeddings.get('dense_vecs', None)
+            sparse_embeddings = generated_embeddings.get('lexical_weights', None)
+            colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
+
+        return dense_embeddings, sparse_embeddings, colbert_embeddings
+
+    def perform_search(
+            self, *,
+            text_chunks: List[str],
+            chunks_metadata: List[ChunkMetadataModel],
+            embeddings: tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]],
+            query: str,
+            vector_database_instance: "VectorDatabaseInfo",
+            top_k: int,
+            vector_choices: List[str]
+    ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
+        result_text: List[str] = []
+        result_chunks_metadata: List[ChunkMetadataModel] = []
+        result_scores: List[float] = []
+
+        query_output: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[
+            List[np.ndarray]]] = self.generate_embeddings([query],
+                                                          vector_database_instance)  # Generujemy embeddingi dla zapytania
+
+        if self == TransformerLibrary.SentenceTransformers:
+            print('SentenceTransformers Search')
+            dense_embeddings = embeddings[0] # ONLY DENSE
+            query_dense = query_output[0]
+
+            dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
+            query_embeddings_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
+
+            result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
+            for result_from_dict in result[0]:
+                corpus_id: int = result_from_dict['corpus_id']
+                result_text.append(text_chunks[corpus_id])
+                result_chunks_metadata.append(chunks_metadata[corpus_id])
+                result_scores.append(result_from_dict['score'])
+
+            return result_text, result_chunks_metadata, result_scores
+
+
+        elif self == TransformerLibrary.FlagEmbedding:
+            # TODO: Implement FlagEmbedding search
+            print('FlagEmbedding: Search')
+            dense_embeddings, sparse_embeddings, colbert_embeddings = embeddings  # Rozpakowujemy krotkę embeddingów
+
+            query_dense = query_output[0]  # Dense embedding dla zapytania
+            query_sparse = query_output[1]  # Sparse embedding dla zapytania
+            query_colbert = query_output[2]  # ColBERT embedding dla zapytania
+
+            torch_d_type = vector_database_instance.float_precision.torch_dtype
+            numpy_d_type = vector_database_instance.float_precision.numpy_dtype
+
+            selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+            model = BGEM3FlagModel(selected_model_path, use_fp16=(torch_d_type == torch.float16))
+
+            for vector_choice in vector_choices:
+                # DENSE
+                if vector_choice == EmbeddingType.DENSE.value and dense_embeddings is not None:
+                    print('FlagEmbedding: DENSE Search')
+                    dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
+                    query_dense_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
+                    dense_score = model.model.compute_dense_score(query_dense_tensor, dense_embeddings_tensor)
+                    print(f'dense_score: {dense_score}')
+                    dense_score = dense_score.squeeze(0) # BO TYLKO JEDEN TENSOR ZAPYTANIA
+
+                    # Znalezienie top-k indeksów i wyników (np. top_k = 5)
+                    top_k_values, top_k_indices = torch.topk(dense_score, k=top_k, largest=True)
+
+                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
+                    for i in range(top_k):
+                        corpus_id = top_k_indices[i].item()  # Get the corpus index
+                        result_text.append(text_chunks[corpus_id])  # Text of the chunk
+                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadata of the chunk
+                        result_scores.append(top_k_values[i].item())  # Corresponding similarity score
+
+                # SPARSE
+                elif vector_choice == EmbeddingType.SPARSE.value and sparse_embeddings is not None:
+                    print('FlagEmbedding: SPARSE Search')
+                    sparse_scores = model.compute_lexical_matching_score(query_sparse, sparse_embeddings)
+                    sparse_scores = sparse_scores.flatten()
+                    sparse_scores_tensor = torch.from_numpy(sparse_scores)
+                    top_k_values, top_k_indices = torch.topk(sparse_scores_tensor, k=top_k, largest=True)
+                    print(f'sparse_scores ({sparse_scores_tensor.dtype}): {sparse_scores_tensor}')
+
+                    for i in range(top_k):
+                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu w sparse_embeddings
+                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
+                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
+                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
+
+                # COLBERT
+                elif vector_choice == EmbeddingType.COLBERT.value and colbert_embeddings is not None:
+                    # Obliczamy wyniki dla ColBERT
+                    print('FlagEmbedding: COLBERT Search')
+                    colbert_scores = []
+                    query_array = query_colbert[0]
+                    for chunk_embedding in colbert_embeddings:
+                        colbert_scores.append(model.colbert_score(query_array, chunk_embedding))
+
+                    # Konwersja listy wyników na tensor PyTorch z określonym typem danych
+                    colbert_scores_tensor = torch.tensor(colbert_scores)
+                    # Znalezienie top-k indeksów i wyników
+                    top_k_values, top_k_indices = torch.topk(colbert_scores_tensor, k=top_k, largest=True)
+                    # Przygotowanie list wynikowych
+                    result_text = []
+                    result_chunks_metadata = []
+                    result_scores = []
+                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
+                    for i in range(top_k):
+                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu
+                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
+                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
+                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
+
+
+            return result_text, result_chunks_metadata, result_scores
+        else:
+            return [], [], []
+
+
 
 
 

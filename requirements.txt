@@ -16,3 +16,5 @@ pyarrow
 sympy
 markdown-it-py
 FlagEmbedding
+overrides
+transformers
