@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+from collections import OrderedDict
 from enum import Enum
 from pathlib import Path
 from typing import List, Tuple, Optional
@@ -14,6 +15,26 @@ from huggingface_hub import snapshot_download
 
 from src.enums.floating_precision_enum import FloatPrecisionPointEnum
 from src.models.chunk_metadata_model import ChunkMetadataModel
+
+_model_cache = OrderedDict()  # Zachowuje kolejność dodawania
+MAX_CACHE_SIZE = 3  # Maksymalna liczba modeli w cache
+
+def _get_cached_model(transformer_library: "TransformerLibrary", model_name: str, float_precision: FloatPrecisionPointEnum):
+    key = (transformer_library.display_name, model_name, float_precision)
+    if key not in _model_cache:
+        model_path = TransformerLibrary.get_embedding_model_path(model_name)
+        if transformer_library == TransformerLibrary.FlagEmbedding:
+            model = BGEM3FlagModel(model_path, use_fp16=(float_precision== FloatPrecisionPointEnum.FP16))
+        elif transformer_library == TransformerLibrary.SentenceTransformers:
+            model = SentenceTransformer(model_path)
+            if float_precision== FloatPrecisionPointEnum.FP16:
+                model = model.half()
+        else:
+            raise ValueError(f"Nieobsługiwana biblioteka: {transformer_library}")
+        if len(_model_cache) >= MAX_CACHE_SIZE:
+            _model_cache.popitem(last=False)  # Usuwa najstarszy element
+        _model_cache[key] = model
+    return _model_cache[key]
 
 
 class TransformerLibrary(Enum):
@@ -45,7 +66,7 @@ class TransformerLibrary(Enum):
         return [e.display_name for e in TransformerLibrary]
 
     @staticmethod
-    def load_embedding_model(model_name: str) -> str:
+    def get_embedding_model_path(model_name: str) -> str:
         """
         Ładuje model Sentence Transformers, szukając folderu, w którym
         wartość "model_name" w metadata.json pasuje do model_instance.name.
@@ -389,23 +410,18 @@ class TransformerLibrary(Enum):
         sparse_embeddings: Optional[List[dict[str, float]]] = None
         colbert_embeddings: Optional[List[np.ndarray]] = None
 
-        selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+        embedding_model = _get_cached_model(
+            transformer_library=self,
+            model_name=vector_database_instance.embedding_model_name,
+            float_precision=vector_database_instance.float_precision
+        )
+
         if self == TransformerLibrary.SentenceTransformers:
             print(f'SentenceTransformers: Generate Embeddings')
-            if vector_database_instance.float_precision == FloatPrecisionPointEnum.FP32:
-                embedding_model = SentenceTransformer(
-                    selected_model_path
-                )
-            elif vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16:
-                embedding_model = SentenceTransformer(
-                    selected_model_path
-                ).half()
-
             dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True, convert_to_numpy=True)
 
         elif self == TransformerLibrary.FlagEmbedding:
             print(f'FlagEmbedding: Generate Embeddings')
-            embedding_model = BGEM3FlagModel(selected_model_path, use_fp16=(vector_database_instance.float_precision == FloatPrecisionPointEnum.FP16))
 
             # WEKTORY ZNORMALIZOWANE WYRZUCA (DENSE)
             generated_embeddings = embedding_model.encode(
@@ -469,7 +485,7 @@ class TransformerLibrary(Enum):
             torch_d_type = vector_database_instance.float_precision.torch_dtype
             numpy_d_type = vector_database_instance.float_precision.numpy_dtype
 
-            selected_model_path = self.load_embedding_model(vector_database_instance.embedding_model_name)
+            selected_model_path = self.get_embedding_model_path(vector_database_instance.embedding_model_name)
             model = BGEM3FlagModel(selected_model_path, use_fp16=(torch_d_type == torch.float16))
 
             for vector_choice in vector_choices:
@@ -479,7 +495,7 @@ class TransformerLibrary(Enum):
                     dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
                     query_dense_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
                     dense_score = model.model.compute_dense_score(query_dense_tensor, dense_embeddings_tensor)
-                    print(f'dense_score: {dense_score}')
+                    #print(f'dense_score: {dense_score}')
                     dense_score = dense_score.squeeze(0) # BO TYLKO JEDEN TENSOR ZAPYTANIA
 
                     # Znalezienie top-k indeksów i wyników (np. top_k = 5)
@@ -499,7 +515,7 @@ class TransformerLibrary(Enum):
                     sparse_scores = sparse_scores.flatten()
                     sparse_scores_tensor = torch.from_numpy(sparse_scores)
                     top_k_values, top_k_indices = torch.topk(sparse_scores_tensor, k=top_k, largest=True)
-                    print(f'sparse_scores ({sparse_scores_tensor.dtype}): {sparse_scores_tensor}')
+                    #print(f'sparse_scores ({sparse_scores_tensor.dtype}): {sparse_scores_tensor}')
 
                     for i in range(top_k):
                         corpus_id = top_k_indices[i].item()  # Indeks fragmentu w sparse_embeddings

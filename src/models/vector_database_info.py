@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import gc
 import json
 import os
 import pickle
@@ -22,7 +24,7 @@ from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
 from src.models.chunk_metadata_model import ChunkMetadataModel
-from abc import ABC, abstractmethod
+
 
 class VectorDatabaseInfo:
     def __init__(
@@ -206,7 +208,11 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
                     metadatas=[chunks_metadata[i].to_dict()]
                 )
 
+        chroma_client.clear_system_cache()
+        chroma_client.reset()
+        del collection
         del chroma_client
+
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('ChromaDB: Search')
@@ -252,7 +258,10 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         dense_embeddings = results[IncludeEnum.embeddings.value]
         dense_embeddings = np.array(dense_embeddings, dtype=self.float_precision.numpy_dtype)
 
+        chroma_client.clear_system_cache()
+        chroma_client.reset()
         del chroma_client
+        del collection
 
         return text_chunks, chunks_metadata_models, (dense_embeddings, [], [])
 
