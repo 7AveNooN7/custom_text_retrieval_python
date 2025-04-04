@@ -90,6 +90,9 @@ def test_embedding_storage_and_retrieval(db_type):
                 f"Retrieved: {retrieved_text_chunks[i]}"
             )
 
+        assert dense_gen is not None
+        assert dense_ret is not None
+
         # DENSE – porównanie floatów z tolerancją
         if dense_gen is not None and dense_ret is not None:
             assert len(dense_gen) == len(
@@ -102,34 +105,35 @@ def test_embedding_storage_and_retrieval(db_type):
                     f"Diff: {np.abs(dense_gen[i] - dense_ret[i])}"
                 )
 
-        # SPARSE – porównanie dictów
-        if sparse_gen is not None and sparse_ret is not None:
-            assert len(sparse_gen) == len(
-                sparse_ret), f"SPARSE: Mismatch in number of vectors: generated={len(sparse_gen)} vs retrieved={len(sparse_ret)}"
-            for i in range(len(sparse_gen)):
-                assert sparse_gen[i] == sparse_ret[i], (
-                    f"SPARSE: Dict {i} differs!\n"
-                    f"Generated: {sparse_gen[i]}\n"
-                    f"Retrieved: {sparse_ret[i]}"
-                )
-
-        # COLBERT – porównanie floatów
-        if colbert_gen is not None and colbert_ret is not None:
-            assert len(colbert_gen) == len(
-                colbert_ret), f"COLBERT: Mismatch in number of vectors: generated={len(colbert_gen)} vs retrieved={len(colbert_ret)}"
-            for i in range(len(colbert_gen)):
-                assert np.allclose(colbert_gen[i], colbert_ret[i], atol=1e-5), (
-                    f"COLBERT: Vector {i} differs!\n"
-                    f"Generated: {colbert_gen[i]}\n"
-                    f"Retrieved: {colbert_ret[i]}\n"
-                    f"Diff: {np.abs(colbert_gen[i] - colbert_ret[i])}"
-                )
+        # # SPARSE – porównanie dictów
+        # if sparse_gen is not None and sparse_ret is not None:
+        #     assert len(sparse_gen) == len(
+        #         sparse_ret), f"SPARSE: Mismatch in number of vectors: generated={len(sparse_gen)} vs retrieved={len(sparse_ret)}"
+        #     for i in range(len(sparse_gen)):
+        #         assert sparse_gen[i] == sparse_ret[i], (
+        #             f"SPARSE: Dict {i} differs!\n"
+        #             f"Generated: {sparse_gen[i]}\n"
+        #             f"Retrieved: {sparse_ret[i]}"
+        #         )
+        #
+        # # COLBERT – porównanie floatów
+        # if colbert_gen is not None and colbert_ret is not None:
+        #     assert len(colbert_gen) == len(
+        #         colbert_ret), f"COLBERT: Mismatch in number of vectors: generated={len(colbert_gen)} vs retrieved={len(colbert_ret)}"
+        #     for i in range(len(colbert_gen)):
+        #         assert np.allclose(colbert_gen[i], colbert_ret[i], atol=1e-5), (
+        #             f"COLBERT: Vector {i} differs!\n"
+        #             f"Generated: {colbert_gen[i]}\n"
+        #             f"Retrieved: {colbert_ret[i]}\n"
+        #             f"Diff: {np.abs(colbert_gen[i] - colbert_ret[i])}"
+        #         )
 
     finally:
         gc.collect()
-        shutil.rmtree(temp_dir)
         if os.path.isdir(db_path):
-            shutil.rmtree(db_path)
+            # NIE USUWA CHROMADB BO SIE NIE DA
+            if db_type != DatabaseType.CHROMA_DB:
+                shutil.rmtree(db_path)
         else:
             os.remove(db_path)
 

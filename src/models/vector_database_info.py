@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import chromadb
 import lancedb
 import numpy as np
-from chromadb.api.types import IncludeEnum
+from chromadb.api.types import Include
 from lancedb.rerankers import RRFReranker
 from overrides import overrides
 from tqdm import tqdm
@@ -208,8 +208,6 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
                     metadatas=[chunks_metadata[i].to_dict()]
                 )
 
-        chroma_client.clear_system_cache()
-        chroma_client.reset()
         del collection
         del chroma_client
 
@@ -227,11 +225,11 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         results = collection.query(query_embeddings=query_embedding, n_results=top_k)
 
-        result_text: List[str] = results[IncludeEnum.documents.value][0]
+        result_text: List[str] = results['documents'][0]
         result_chunks_metadata: List[ChunkMetadataModel] = [
-            ChunkMetadataModel.from_dict(meta_dict) for meta_dict in results[IncludeEnum.metadatas.value][0]
+            ChunkMetadataModel.from_dict(meta_dict) for meta_dict in results['metadatas'][0]
         ]
-        result_scores: List[float] = results[IncludeEnum.distances.value][0]
+        result_scores: List[float] = results['distances'][0]
 
 
         return result_text, result_chunks_metadata, result_scores
@@ -248,18 +246,16 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         # Pobieranie wszystkich danych
         results = collection.get(
-            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings],
+            include=['documents', 'metadatas', 'embeddings'],
         )
 
         # Przypisanie danych do zmiennych
-        text_chunks = results[IncludeEnum.documents.value]
-        chunks_metadata = results[IncludeEnum.metadatas.value]
+        text_chunks = results['documents']
+        chunks_metadata = results['metadatas']
         chunks_metadata_models: List[ChunkMetadataModel] = [ChunkMetadataModel.from_dict(meta) for meta in chunks_metadata]
-        dense_embeddings = results[IncludeEnum.embeddings.value]
+        dense_embeddings = results['embeddings']
         dense_embeddings = np.array(dense_embeddings, dtype=self.float_precision.numpy_dtype)
 
-        chroma_client.clear_system_cache()
-        chroma_client.reset()
         del chroma_client
         del collection
 
