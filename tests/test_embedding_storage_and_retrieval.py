@@ -26,35 +26,59 @@ logger = logging.getLogger(__name__)
 def model_cache():
     cache = OrderedDict()
     yield cache
-    #cache.clear()
 
 
-@pytest.mark.parametrize("db_type, embedding_types", [
-    (DatabaseType.CHROMA_DB, [EmbeddingType.DENSE]),
-    (DatabaseType.LANCE_DB, [EmbeddingType.DENSE]),
-    (DatabaseType.SQLITE, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT]),
-])
-def test_embedding_storage_and_retrieval(db_type, embedding_types, model_cache, monkeypatch):
-    start_total = time.time()
-    monkeypatch.setattr("src.enums.transformer_library_enum._model_cache", model_cache)
-    logger.info(f"Test start (db_type={db_type}): model_cache = {model_cache}")
-
-
-    start_io = time.time()
-    # Przygotuj dane testowe
-    temp_dir = tempfile.mkdtemp() # temporary directory only for the test purpose
-    db_path = None
-
-    db_name = 'test_embedding_storage_and_retrieval'
-    model_name = 'BAAI/bge-m3'
-    float_precision_enum = FloatPrecisionPointEnum.FP16
-
+@pytest.fixture(scope="module")
+def temp_database_resources():
+    # Przygotowanie zasobów
+    temp_dir = tempfile.mkdtemp()
+    db_paths = {}
     test_text = "Ala ma kota. Kot ma Ale."
     test_file_path = os.path.join(temp_dir, "test.txt")
     with open(test_file_path, "w", encoding="utf-8") as f:
         f.write(test_text)
-    logger.info(f"Czas I/O: {time.time() - start_io:.2f} s")
-    start_db = time.time()
+
+    yield temp_dir, test_file_path, db_paths
+
+    # Sprzątanie po wszystkich testach w module
+    gc.collect()
+    for db_path, db_type in db_paths.items():  # db_paths teraz przechowuje pary (ścieżka, db_type)
+        if os.path.isdir(db_path):
+            if db_type != DatabaseType.CHROMA_DB:  # Użyj db_type z db_paths
+                shutil.rmtree(db_path, ignore_errors=True)
+        elif os.path.isfile(db_path):
+            time.sleep(1)
+            os.remove(db_path)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+
+@pytest.mark.parametrize(
+    "db_type, embedding_types, float_precision_enum, transformer_library",
+    [
+        # FLAG EMBEDDING FP16 and FP32
+        (DatabaseType.CHROMA_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP16, TransformerLibrary.FlagEmbedding),
+        (DatabaseType.LANCE_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP16, TransformerLibrary.FlagEmbedding),
+        (DatabaseType.SQLITE, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], FloatPrecisionPointEnum.FP16, TransformerLibrary.FlagEmbedding),
+        (DatabaseType.CHROMA_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.FlagEmbedding),
+        (DatabaseType.LANCE_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.FlagEmbedding),
+        (DatabaseType.SQLITE, [EmbeddingType.DENSE, EmbeddingType.SPARSE, EmbeddingType.COLBERT], FloatPrecisionPointEnum.FP32, TransformerLibrary.FlagEmbedding),
+        # SENTENCE TRANSFORMERS FP16 and FP32
+        (DatabaseType.CHROMA_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP16, TransformerLibrary.SentenceTransformers),
+        (DatabaseType.LANCE_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP16, TransformerLibrary.SentenceTransformers),
+        (DatabaseType.SQLITE, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP16, TransformerLibrary.SentenceTransformers),
+        (DatabaseType.CHROMA_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.SentenceTransformers),
+        (DatabaseType.LANCE_DB, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.SentenceTransformers),
+        (DatabaseType.SQLITE, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.SentenceTransformers)
+    ]
+)
+def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
+    temp_dir, test_file_path, db_paths = temp_database_resources
+    monkeypatch.setattr("src.enums.transformer_library_enum._model_cache", model_cache)
+
+    db_name = f'test_{len(embedding_types)}_{float_precision_enum.value}_{transformer_library.display_name}'
+    model_name = 'BAAI/bge-m3'
+
     try:
         # Inicjalizacja instancji bazy danych
         db_class = db_type.db_class
@@ -70,10 +94,9 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, model_cache, 
             chunk_size=100,
             chunk_overlap=10,
             files_paths=[test_file_path],
-            transformer_library=TransformerLibrary.FlagEmbedding,
+            transformer_library=transformer_library,
             features={}
         )
-        print(f"Czas inicjalizacji bazy: {time.time() - start_db:.2f} s")
 
 
         db_folder = vector_database_instance.get_database_type().db_folder
@@ -85,6 +108,8 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, model_cache, 
                 shutil.rmtree(db_path)
             else:
                 os.remove(db_path)
+
+        db_paths[db_path] = db_type
 
         start_emb = time.time()
         # GENERATED VARIABLES
@@ -106,6 +131,9 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, model_cache, 
 
         dense_gen, sparse_gen, colbert_gen = generated_embeddings
         dense_ret, sparse_ret, colbert_ret = retrieved_embeddings
+
+        print(f'sparse_gen: {sparse_gen}')
+        print(f'colbert_gen: {colbert_gen}')
 
         embedding_types_checking(
             embeddings=generated_embeddings,
@@ -174,10 +202,4 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, model_cache, 
 
     finally:
         gc.collect()
-        if os.path.isdir(db_path):
-            # NIE USUWA CHROMADB BO SIE NIE DA WIN32
-            if db_type != DatabaseType.CHROMA_DB:
-                shutil.rmtree(db_path)
-        else:
-            os.remove(db_path)
 

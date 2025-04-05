@@ -45,11 +45,10 @@ def embedding_types_checking(*,
             for k, v in d.items():
                 if not isinstance(k, str):
                     raise TypeError(f"Sparse embeddings bad type! Key {k} in item {i} is {type(k)}, expected str")
-                if not isinstance(v, float_precision.numpy_dtype
-                                  ):
+                if not isinstance(v, float_precision.numpy_dtype):
                     raise TypeError(f"Sparse embeddings bad type! Value {v} in item {i} is {type(v)}, expected {float_precision.numpy_dtype
                     }")
-        print(f'✅ Sparse Type: {type(embeddings[1])}')
+        print(f'✅ Sparse Type: List[Dict[str, {float_precision.numpy_dtype.__name__}]]')
     else:
         print(f'✅ Sparse Type: {type(embeddings[1])}')
 

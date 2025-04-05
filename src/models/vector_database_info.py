@@ -234,7 +234,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
 
         return result_text, result_chunks_metadata, result_scores
 
-    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, List, List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, None, None]]:
         print('ChromaDB: Retrieve')
         # Ścieżka do bazy danych
         database_folder = self.get_database_type().db_folder
@@ -259,7 +259,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         del chroma_client
         del collection
 
-        return text_chunks, chunks_metadata_models, (dense_embeddings, [], [])
+        return text_chunks, chunks_metadata_models, (dense_embeddings, None, None)
 
 
 class LanceVectorDatabase(VectorDatabaseInfo):
@@ -365,7 +365,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         del lance_db
 
     @overrides
-    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, List[ChunkMetadataModel], List]]:
+    def retrieve_from_database(self) -> tuple[List[str], List[ChunkMetadataModel], tuple[np.ndarray, None, None]]:
         print('LanceDB: Retrieve')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
@@ -383,7 +383,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         del lance_db
 
-        return text_chunks, chunks_metadata, (dense_embeddings, [], [])
+        return text_chunks, chunks_metadata, (dense_embeddings, None, None)
 
     def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('LanceDB Search')
@@ -525,6 +525,9 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # Dense
                 dense_blob = None
                 if embeddings[0] is not None and embeddings[0].size > 0 and i < len(embeddings[0]):
+                    # if i == 0:
+                    #     print(
+                    #         f'dense n. {i} type: {type(embeddings[0][i])} shape: {embeddings[2][i].shape} type: {embeddings[0][i].dtype}')
                     dense_blob = embeddings[0][i].tobytes()
 
                 # Sparse
@@ -536,7 +539,11 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 colbert_blob = None
                 colbert_shape = None
                 if embeddings[2] is not None and i < len(embeddings[2]):
-                    colbert_blob = embeddings[2][i].tobytes()  #.astype(self.float_precision.numpy_dtype).tobytes()
+                    # if i == 0:
+                    #     print(
+                    #         f'colbert n. {i} type: {type(embeddings[2][i])} shape: {embeddings[2][i].shape} type: {embeddings[2][i].dtype}')
+                    # NIESTETY COLBERT ZAWSZE WYCHODZI WE FLOAT32!
+                    colbert_blob = embeddings[2][i].tobytes()  #astype(self.float_precision.numpy_dtype).tobytes()
                     colbert_shape = json.dumps(embeddings[2][i].shape)
 
 
@@ -555,6 +562,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
             # Wstawianie metadanych po pętli
             metadata_json = json.dumps(self.to_dict())
             cursor.execute('INSERT INTO metadata (metadata_json) VALUES (?)', (metadata_json,))
+            cursor.close()
 
             # Automatyczny commit przy wyjściu z bloku 'with'
 
@@ -580,6 +588,8 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 FROM {self.database_name}
             ''')
             rows = cursor.fetchall()
+
+            cursor.close()
 
             # Inicjalizacja list wynikowych
             text_chunks: List[str] = []
@@ -609,7 +619,10 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # ColBERT
                 if has_colbert:
                     colbert_shape_tuple = tuple(json.loads(row[5]))
-                    colbert_vector = np.frombuffer(row[4], dtype=self.float_precision.numpy_dtype).reshape(
+                    print(
+                        f'n. {rows.index(row)} shape: {colbert_shape_tuple} dtype: {self.float_precision.numpy_dtype}')
+                    # NIESTETY COLBERT ZAWSZE WYCHODZI WE FLOAT32!
+                    colbert_vector = np.frombuffer(row[4], dtype=np.float32).reshape(
                         colbert_shape_tuple)
                     colbert_embeddings.append(colbert_vector)
 

@@ -8,11 +8,9 @@ from typing import List, Tuple, Optional
 import gradio as gr
 import numpy as np
 import tiktoken
-import nltk
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from src.embeddings_type_checking import embedding_types_checking
 from src.enums.overlap_type import OverlapTypeEnum
 from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
 from src.enums.transformer_library_enum import TransformerLibrary
@@ -453,13 +451,13 @@ def save_to_database(vector_database_instance: VectorDatabaseInfo):
     gr.Info("✅ Text Chunks created!")
     embeddings: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]] = generate_embeddings(text_chunks, vector_database_instance)
 
-    try:
-        print(f'FUNCTION: embedding_types_checking')
-        embedding_types_checking(embeddings=embeddings, float_precision=vector_database_instance.float_precision, model_name=vector_database_instance.embedding_model_name)
-    except Exception as e:
-        gr.Warning(f"Błąd w sprawdzaniu typów osadzeń: {e}")
-        traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
-        return  # Zatrzymuje dalsze działanie funkcji
+    # try:
+    #     print(f'FUNCTION: embedding_types_checking')
+    #     embedding_types_checking(embeddings=embeddings, float_precision=vector_database_instance.float_precision, model_name=vector_database_instance.embedding_model_name)
+    # except Exception as e:
+    #     gr.Warning(f"Błąd w sprawdzaniu typów osadzeń: {e}")
+    #     traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
+    #     return  # Zatrzymuje dalsze działanie funkcji
 
     gr.Info("✅ Embeddings created!")
     vector_database_instance.create_new_database(text_chunks=text_chunks, chunks_metadata=chunks_metadata, embeddings=embeddings)

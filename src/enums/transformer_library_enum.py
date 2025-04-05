@@ -24,7 +24,7 @@ def _get_cached_model(transformer_library: "TransformerLibrary", model_name: str
     if key not in _model_cache:
         model_path = TransformerLibrary.get_embedding_model_path(model_name)
         if transformer_library == TransformerLibrary.FlagEmbedding:
-            model = BGEM3FlagModel(model_path, use_fp16=(float_precision== FloatPrecisionPointEnum.FP16))
+            model = BGEM3FlagModel(model_path, use_fp16=(float_precision == FloatPrecisionPointEnum.FP16))
         elif transformer_library == TransformerLibrary.SentenceTransformers:
             model = SentenceTransformer(model_path)
             if float_precision== FloatPrecisionPointEnum.FP16:
