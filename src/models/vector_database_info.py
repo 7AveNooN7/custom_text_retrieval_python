@@ -536,7 +536,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 colbert_blob = None
                 colbert_shape = None
                 if embeddings[2] is not None and i < len(embeddings[2]):
-                    colbert_blob = embeddings[2][i].astype(self.float_precision.numpy_dtype).tobytes()
+                    colbert_blob = embeddings[2][i].tobytes()  #.astype(self.float_precision.numpy_dtype).tobytes()
                     colbert_shape = json.dumps(embeddings[2][i].shape)
 
 
