@@ -127,8 +127,7 @@ def search_database_tab():
         @gr.render(inputs=[query_list_state])
         def render_query_inputs(query_list):
             def update_queries_state(*text_values):
-                print("Otrzymane teksty:", text_values)
-                # tu jakaś logika łączenia, przetwarzania, itp.
+                #print("Otrzymane teksty:", text_values)
                 return list(text_values)
 
             def component_added(*text_values):

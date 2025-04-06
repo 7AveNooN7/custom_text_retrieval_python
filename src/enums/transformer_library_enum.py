@@ -398,7 +398,7 @@ class TransformerLibrary(Enum):
 
         return basic_dict
 
-    def generate_embeddings(self, text_chunks: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
+    def generate_embeddings(self, text_chunks_or_queries: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[List[np.ndarray]], Optional[List[List[dict[str, float]]]], Optional[List[List[np.ndarray]]]]:
         """
         Generate embeddings based on the enum type and requested embedding type.
         transformer_library: TransformerLibrary = vector_database_instance.transformer_library
@@ -418,22 +418,28 @@ class TransformerLibrary(Enum):
 
         if self == TransformerLibrary.SentenceTransformers:
             print(f'SentenceTransformers: Generate Embeddings')
-            dense_embeddings = embedding_model.encode(text_chunks, show_progress_bar=True, convert_to_numpy=True)
+            dense_embeddings = embedding_model.encode(text_chunks_or_queries, show_progress_bar=True, convert_to_numpy=True)
+
+            print(f'dense_embeddings: {dense_embeddings.shape}')
 
         elif self == TransformerLibrary.FlagEmbedding:
             print(f'FlagEmbedding: Generate Embeddings')
 
             # WEKTORY ZNORMALIZOWANE WYRZUCA (DENSE)
             generated_embeddings = embedding_model.encode(
-                sentences=text_chunks,
+                sentences=text_chunks_or_queries,
                 return_dense=EmbeddingType.DENSE in list_of_embeddings_to_create,
                 return_sparse=EmbeddingType.SPARSE in list_of_embeddings_to_create,
                 return_colbert_vecs=EmbeddingType.COLBERT in list_of_embeddings_to_create,
             )
 
             dense_embeddings = generated_embeddings.get('dense_vecs', None)
+            print(f'dense_embeddings: {dense_embeddings.shape}')
             sparse_embeddings = generated_embeddings.get('lexical_weights', None)
+            print(f'sparse_embeddings: {len(sparse_embeddings)}')
             colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
+            print(f'colbert_embeddings: {len(colbert_embeddings)}')
+
 
         return dense_embeddings, sparse_embeddings, colbert_embeddings
 
@@ -452,7 +458,7 @@ class TransformerLibrary(Enum):
         result_scores: List[float] = []
 
         query_output: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[
-            List[np.ndarray]]] = self.generate_embeddings([query_list[0]],
+            List[np.ndarray]]] = self.generate_embeddings(query_list,
                                                           vector_database_instance)  # Generujemy embeddingi dla zapytania
 
         if self == TransformerLibrary.SentenceTransformers:
@@ -463,12 +469,14 @@ class TransformerLibrary(Enum):
             dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
             query_embeddings_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
 
-            result = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
-            for result_from_dict in result[0]:
-                corpus_id: int = result_from_dict['corpus_id']
-                result_text.append(text_chunks[corpus_id])
-                result_chunks_metadata.append(chunks_metadata[corpus_id])
-                result_scores.append(result_from_dict['score'])
+            results = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
+            for result in results:
+                many_results_text = []
+                for result_from_dict in result:
+                    corpus_id: int = result_from_dict['corpus_id']
+                    result_text.append(text_chunks[corpus_id])
+                    result_chunks_metadata.append(chunks_metadata[corpus_id])
+                    result_scores.append(result_from_dict['score'])
 
             return result_text, result_chunks_metadata, result_scores
 

@@ -432,7 +432,7 @@ def generate_text_chunks(vector_database_instance: VectorDatabaseInfo) -> tuple[
 
     return texts, metadata
 
-def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
+def generate_embeddings(text_chunk: List[str], vector_database_instance: VectorDatabaseInfo) -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
     transformer_library: TransformerLibrary = vector_database_instance.transformer_library
     dense_embeddings, sparse_embeddings, colbert_embeddings = transformer_library.generate_embeddings(text_chunk, vector_database_instance)
     return dense_embeddings, sparse_embeddings, colbert_embeddings

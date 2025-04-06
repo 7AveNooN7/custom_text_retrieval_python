@@ -610,8 +610,7 @@ class SqliteVectorDatabase(VectorDatabaseInfo):
                 # ColBERT
                 if has_colbert:
                     colbert_shape_tuple = tuple(json.loads(row[5]))
-                    print(
-                        f'n. {rows.index(row)} shape: {colbert_shape_tuple} dtype: {self.float_precision.numpy_dtype}')
+                    #print(f'n. {rows.index(row)} shape: {colbert_shape_tuple} dtype: {self.float_precision.numpy_dtype}')
                     # NIESTETY COLBERT ZAWSZE WYCHODZI WE FLOAT32!
                     colbert_vector = np.frombuffer(row[4], dtype=np.float32).reshape(
                         colbert_shape_tuple)
