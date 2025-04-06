@@ -10,7 +10,7 @@ from src.perform_search import perform_search, get_search_type
 from src.search_utils import count_tokens, fetch_saved_databases
 
 def search_database_tab():
-    with gr.Tab("🔎 Wyszukiwanie w bazie"):
+    with ((gr.Tab("🔎 Wyszukiwanie w bazie"))):
 
         ###################### DATABASE TYPE DROPDOWN ######################
         # STATE
@@ -104,9 +104,9 @@ def search_database_tab():
                 )
 
         ###################### QUERY TEXTBOX ######################
-        query_input = gr.Textbox(
-            label="🔎 Wpisz swoje pytanie"
-        )
+        # query_input = gr.Textbox(
+        #     label="🔎 Wpisz swoje pytanie"
+        # )
 
         ###################### TOP K SLIDER ######################
         top_k_slider = gr.Slider(
@@ -116,6 +116,98 @@ def search_database_tab():
             step=1,
             label="🔝 Liczba najlepszych wyników"
         )
+        # Add state for tracking number of query pairs
+        query_list_state = gr.State([1])
+        added_count_state = gr.State(1)
+
+        queries_state = gr.State([""])
+
+
+        # Dynamic rendering of query textboxes and sliders with delete buttons
+        @gr.render(inputs=[query_list_state])
+        def render_query_inputs(query_list):
+            def update_queries_state(*text_values):
+                print("Otrzymane teksty:", text_values)
+                # tu jakaś logika łączenia, przetwarzania, itp.
+                return list(text_values)
+
+            def component_added(*text_values):
+                list_of_values = list(text_values)
+                list_of_values.append('')
+                return list_of_values
+
+            def component_deleted(queries_arg, index_arg):
+                modified_query_list = list(queries_arg)
+                del modified_query_list[index_arg]
+                return modified_query_list
+
+
+            count = len(query_list)
+            text_boxes = []
+            for i in range(count):
+                with gr.Row(
+                    equal_height=True
+                ):
+                    query_input = gr.Textbox(
+                        scale=2,
+                        label=f"🔎 Zapytanie {i + 1}",
+                        key=f"query_input_{query_list[i]}"
+                    )
+                    query_input.input(
+                        fn=update_queries_state,
+                        inputs=text_boxes,
+                        outputs=queries_state
+                    )
+
+                    text_boxes.append(query_input)
+
+                    if count > 1:
+                        delete_btn = gr.Button(
+                            "X",
+                            size='sm',
+                            min_width=20,
+                            scale=0,
+                            elem_classes="minimal-button"
+                        )
+                        delete_btn.click(
+                            fn=remove_index,
+                            inputs=[query_list_state, gr.State(i)],
+                            outputs=query_list_state
+                        ).then(
+                            fn=component_deleted,
+                            inputs=[queries_state, gr.State(i)],
+                            outputs=queries_state
+                        )
+
+            add_query_btn.click(
+                fn=add_query_component,
+                inputs=[query_list_state, added_count_state],
+                outputs=[query_list_state, added_count_state]
+            ).then(
+                fn=component_added,
+                inputs=text_boxes,
+                outputs=queries_state
+            )
+
+
+        # Add button to increase query count
+        add_query_btn = gr.Button("➕ Dodaj kolejne zapytanie")
+
+        def add_query_component(query_list: List, added_count):
+            added_count = added_count + 1
+            query_list.append(added_count)
+            return query_list, added_count
+
+
+
+        def remove_index(lst, idx):
+            idx = int(idx)
+            if 0 <= idx < len(lst):
+                return lst[:idx] + lst[idx + 1:]
+            return lst  # jeśli idx spoza zakresu, nic nie usuwamy
+
+
+
 
         ###################### SEARCH TYPE ######################
         # STATE
@@ -228,6 +320,17 @@ def search_database_tab():
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
+        def test_1(queries):
+            print(f'queries: {queries}')
+
+        test_btn = gr.Button("🔍 Test")
+        test_btn.click(
+            test_1,
+            queries_state,
+            []
+        )
+
+
         with gr.Row():
 
             token_output = gr.Number(
@@ -248,18 +351,18 @@ def search_database_tab():
 
         search_btn.click(
             ui_search_database,
-            [selected_database_engine_state, selected_database_state, query_input, top_k_slider, search_method_choice, vectors_choices_state, features_choices_state],
+            [selected_database_engine_state, selected_database_state, queries_state, top_k_slider, search_method_choice, vectors_choices_state, features_choices_state],
             [token_output, characters_output, search_output]
         )
 
 
-def ui_search_database(database_type: str, vector_database_instance_json: str, query: str, top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
+def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
     retrieved_text = perform_search(
         vector_database_instance=vector_database_instance,
         search_method=search_method,
-        query=query,
+        query_list=query_list,
         top_k=top_k,
         vector_choices=vector_choices,
         features_choices=features_choices
@@ -267,3 +370,20 @@ def ui_search_database(database_type: str, vector_database_instance_json: str, q
     token_count = count_tokens(retrieved_text)
     characters_output = len(retrieved_text)
     return token_count, characters_output, retrieved_text
+
+
+css = """
+.minimal-button {
+    padding: 2px 5px !important;  /* Minimalne wypełnienie */
+    margin: 0 !important;         /* Usuwa marginesy */
+    width: 100px !important;       /* Stała, bardzo mała szerokość */
+    height: 30px !important;      /* Stała, mała wysokość */
+    display: flex;                /* Centruje ikonę */
+    align-items: center;
+    justify-content: center;
+}
+"""
+
+def test_component(query_inputs_state, top_k_values_state):
+    print(f'query: {query_inputs_state}')
+    print(f'top_k: {top_k_values_state}')

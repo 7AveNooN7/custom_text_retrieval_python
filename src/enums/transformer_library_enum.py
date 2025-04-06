@@ -442,7 +442,7 @@ class TransformerLibrary(Enum):
             text_chunks: List[str],
             chunks_metadata: List[ChunkMetadataModel],
             embeddings: tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]],
-            query: str,
+            query_list: List[str],
             vector_database_instance: "VectorDatabaseInfo",
             top_k: int,
             vector_choices: List[str]
@@ -452,7 +452,7 @@ class TransformerLibrary(Enum):
         result_scores: List[float] = []
 
         query_output: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[
-            List[np.ndarray]]] = self.generate_embeddings([query],
+            List[np.ndarray]]] = self.generate_embeddings([query_list[0]],
                                                           vector_database_instance)  # Generujemy embeddingi dla zapytania
 
         if self == TransformerLibrary.SentenceTransformers:

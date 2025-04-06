@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import json
 import os
 import pickle
@@ -10,7 +9,6 @@ from typing import List, Dict, Any, Tuple, Optional
 import chromadb
 import lancedb
 import numpy as np
-from chromadb.api.types import Include
 from lancedb.rerankers import RRFReranker
 from overrides import overrides
 from tqdm import tqdm
@@ -110,7 +108,7 @@ class VectorDatabaseInfo:
                 return db_type
         raise ValueError(f"Brak odpowiedniego typu bazy danych dla klasy: {cls.__name__}")
 
-    def perform_search(self, query, top_k, vector_choices, features_choices):
+    def perform_search(self, query_list, top_k, vector_choices, features_choices):
         pass
 
     def retrieve_from_database(self):
@@ -212,7 +210,7 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         del chroma_client
 
 
-    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+    def perform_search(self, *, query_list: List[str], top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('ChromaDB: Search')
         database_folder = self.get_database_type().db_folder
         db_path = os.path.join(database_folder, self.database_name)
@@ -221,11 +219,11 @@ class ChromaVectorDatabase(VectorDatabaseInfo):
         collection = chroma_client.get_or_create_collection(name=self.database_name)
 
         transformer_library = self.transformer_library
-        query_embedding: np.ndarray = transformer_library.generate_embeddings([query], self)[0] # TYLKO DENSE INDEX 0
+        query_embedding: np.ndarray = transformer_library.generate_embeddings(query_list, self)[0] # TYLKO DENSE INDEX 0
 
         results = collection.query(query_embeddings=query_embedding, n_results=top_k)
 
-        result_text: List[str] = results['documents'][0]
+        result_text: List[str] = results['documents'][0] # TODO: zastanowic się czy tylko raz to pobrac czy wiecej
         result_chunks_metadata: List[ChunkMetadataModel] = [
             ChunkMetadataModel.from_dict(meta_dict) for meta_dict in results['metadatas'][0]
         ]
@@ -385,14 +383,14 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         return text_chunks, chunks_metadata, (dense_embeddings, None, None)
 
-    def perform_search(self, *, query: str, top_k: int, vector_choices: List[str], features_choices: List[str]):
+    def perform_search(self, *, query_list: List[str], top_k: int, vector_choices: List[str], features_choices: List[str]):
         print('LanceDB Search')
         db_path = os.path.join(self.get_database_type().db_folder, self.database_name)
         lance_db = lancedb.connect(db_path)
         table = lance_db.open_table(self.database_name)
 
         transformer_library = self.transformer_library
-        query_embedding: np.ndarray = transformer_library.generate_embeddings([query], self)[0]  # TYLKO DENSE INDEX 0
+        query_embedding: np.ndarray = transformer_library.generate_embeddings(query_list, self)[0]  # TYLKO DENSE INDEX 0
 
         from src.enums.database_type_enum import DatabaseFeature
         if EmbeddingType.DENSE.value in vector_choices and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
@@ -401,7 +399,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
             results = (
                 table.search(vector_column_name=EmbeddingType.DENSE.value, query_type="hybrid", fts_columns=self.TEXT_COLUMN)
                 .vector(query_embedding)
-                .text(query)
+                .text(query_list[0])
                 .limit(top_k)
                 .select([self.TEXT_COLUMN, self.METADATA_COLUMN])
                 .rerank(reranker)
@@ -418,19 +416,12 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         elif DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in features_choices:
             print('LanceDB FULL TEXT SEARCH')
             results = (
-                table.search(query=query, query_type="fts", fts_columns=self.TEXT_COLUMN)
+                table.search(query=query_list[0], query_type="fts", fts_columns=self.TEXT_COLUMN)
                 .limit(top_k)
                 .select([self.TEXT_COLUMN, self.METADATA_COLUMN])
                 .to_pandas()
             )
 
-
-        # if "_relevance_score" in results.columns:
-        #     results = results.sort_values("_relevance_score", ascending=False)
-        # elif "_distance" in results.columns:
-        #     results = results.sort_values("_distance", ascending=True)
-        # elif "_score" in results.columns:
-        #     results = results.sort_values("_score", ascending=False)
 
         result_text: List[str] = results[self.TEXT_COLUMN].tolist()
         result_chunks_metadata: List[ChunkMetadataModel] =  [

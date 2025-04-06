@@ -24,7 +24,7 @@ def perform_search(
         *,
         vector_database_instance: VectorDatabaseInfo,
         search_method: str,
-        query: str,
+        query_list: List[str],
         top_k: int,
         vector_choices: List[str],
         features_choices: List[str]
@@ -36,7 +36,7 @@ def perform_search(
     result_scores: List[float] = []
     response = ""
     if isinstance(search_type, DatabaseType):
-        result_text, result_chunks_metadata, result_scores = vector_database_instance.perform_search(query=query, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
+        result_text, result_chunks_metadata, result_scores = vector_database_instance.perform_search(query_list=query_list, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
     elif isinstance(search_type, TransformerLibrary):
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
@@ -57,7 +57,7 @@ def perform_search(
             text_chunks=text_chunks,
             chunks_metadata=chunks_metadata,
             embeddings=embeddings,
-            query=query,
+            query_list=query_list,
             vector_database_instance=vector_database_instance,
             top_k=top_k,
             vector_choices=vector_choices

@@ -33,7 +33,12 @@ def temp_database_resources():
     # Przygotowanie zasobów
     temp_dir = tempfile.mkdtemp()
     db_paths = {}
-    test_text = "Ala ma kota. Kot ma Ale."
+    test_text = (
+        "Vitamin C is found in citrus fruits like oranges and lemons."
+        "The Earth orbits the Sun in approximately 365.25 days."
+        "Water boils at 100 degrees Celsius at sea level."
+        "Photosynthesis in plants requires sunlight and carbon dioxide."
+    )
     test_file_path = os.path.join(temp_dir, "test.txt")
     with open(test_file_path, "w", encoding="utf-8") as f:
         f.write(test_text)
@@ -91,8 +96,8 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
             preserve_whole_sentences=True,
             exceed_limit=False,
             overlap_type=OverlapTypeEnum.SLIDING_WINDOW,
-            chunk_size=100,
-            chunk_overlap=10,
+            chunk_size=10,
+            chunk_overlap=0,
             files_paths=[test_file_path],
             transformer_library=transformer_library,
             features={}
@@ -132,8 +137,6 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
         dense_gen, sparse_gen, colbert_gen = generated_embeddings
         dense_ret, sparse_ret, colbert_ret = retrieved_embeddings
 
-        print(f'sparse_gen: {sparse_gen}')
-        print(f'colbert_gen: {colbert_gen}')
 
         embedding_types_checking(
             embeddings=generated_embeddings,
@@ -157,6 +160,7 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
                 f"Generated: {generated_text_chunks[i]}\n"
                 f"Retrieved: {retrieved_text_chunks[i]}"
             )
+            assert generated_chunks_metadata[i].to_dict() == retrieved_chunks_metadata[i].to_dict(), f"METADATA CHUNKS: Chunk {i} differs!"
 
         assert dense_gen is not None
         assert dense_ret is not None
@@ -199,6 +203,8 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
                     f"Retrieved: {colbert_ret[i]}\n"
                     f"Diff: {np.abs(colbert_gen[i] - colbert_ret[i])}"
                 )
+
+
 
     finally:
         gc.collect()
