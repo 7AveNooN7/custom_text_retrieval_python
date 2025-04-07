@@ -61,7 +61,7 @@ def perform_search(
             vector_database_instance=vector_database_instance,
             top_k=top_k,
             vector_choices=vector_choices
-        )
+        )[0]
 
     for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
         response += (

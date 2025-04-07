@@ -452,10 +452,8 @@ class TransformerLibrary(Enum):
             vector_database_instance: "VectorDatabaseInfo",
             top_k: int,
             vector_choices: List[str]
-    ) -> Tuple[List[str], List[ChunkMetadataModel], List[float]]:
-        result_text: List[str] = []
-        result_chunks_metadata: List[ChunkMetadataModel] = []
-        result_scores: List[float] = []
+    ) -> List[Tuple[List[str], List[ChunkMetadataModel], List[float]]]:
+
 
         query_output: Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[
             List[np.ndarray]]] = self.generate_embeddings(query_list,
@@ -463,22 +461,31 @@ class TransformerLibrary(Enum):
 
         if self == TransformerLibrary.SentenceTransformers:
             print('SentenceTransformers Search')
+            result_text: List[str] = []
+            result_chunks_metadata: List[ChunkMetadataModel] = []
+            result_scores: List[float] = []
+
+
             dense_embeddings = embeddings[0] # ONLY DENSE
-            query_dense = query_output[0]
+            query_dense = query_output[0] # ONLY DENSE
 
             dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
             query_embeddings_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
 
+            all_results = []
+
             results = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
             for result in results:
-                many_results_text = []
                 for result_from_dict in result:
                     corpus_id: int = result_from_dict['corpus_id']
                     result_text.append(text_chunks[corpus_id])
                     result_chunks_metadata.append(chunks_metadata[corpus_id])
                     result_scores.append(result_from_dict['score'])
 
-            return result_text, result_chunks_metadata, result_scores
+                all_results.append((result_text, result_chunks_metadata, result_scores))
+
+
+            return all_results
 
 
         elif self == TransformerLibrary.FlagEmbedding:
@@ -490,75 +497,125 @@ class TransformerLibrary(Enum):
             query_sparse = query_output[1]  # Sparse embedding dla zapytania
             query_colbert = query_output[2]  # ColBERT embedding dla zapytania
 
-            torch_d_type = vector_database_instance.float_precision.torch_dtype
-            numpy_d_type = vector_database_instance.float_precision.numpy_dtype
+            model: BGEM3FlagModel
+            model = _get_cached_model(transformer_library=self, model_name=vector_database_instance.embedding_model_name, float_precision=vector_database_instance.float_precision)
 
-            selected_model_path = self.get_embedding_model_path(vector_database_instance.embedding_model_name)
-            model = BGEM3FlagModel(selected_model_path, use_fp16=(torch_d_type == torch.float16))
+            dense_all_results = []
+            sparse_all_results = []
+            colbert_all_results = []
 
             for vector_choice in vector_choices:
                 # DENSE
                 if vector_choice == EmbeddingType.DENSE.value and dense_embeddings is not None:
                     print('FlagEmbedding: DENSE Search')
+                    result_scores: List[float] = []
+
                     dense_embeddings_tensor = torch.tensor(dense_embeddings, dtype=vector_database_instance.float_precision.torch_dtype)
                     query_dense_tensor = torch.tensor(query_dense, dtype=vector_database_instance.float_precision.torch_dtype)
                     dense_score = model.model.compute_dense_score(query_dense_tensor, dense_embeddings_tensor)
-                    #print(f'dense_score: {dense_score}')
-                    dense_score = dense_score.squeeze(0) # BO TYLKO JEDEN TENSOR ZAPYTANIA
 
-                    # Znalezienie top-k indeksów i wyników (np. top_k = 5)
-                    top_k_values, top_k_indices = torch.topk(dense_score, k=top_k, largest=True)
-
-                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Get the corpus index
-                        result_text.append(text_chunks[corpus_id])  # Text of the chunk
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadata of the chunk
-                        result_scores.append(top_k_values[i].item())  # Corresponding similarity score
+                    for query_idx in range(dense_score.shape[0]):  # Iterujemy po każdym zapytaniu
+                        result_scores = dense_score[query_idx].tolist()  # Wszystkie wyniki jako lista
+                        dense_all_results.append(result_scores)
 
                 # SPARSE
                 elif vector_choice == EmbeddingType.SPARSE.value and sparse_embeddings is not None:
                     print('FlagEmbedding: SPARSE Search')
+                    result_scores: List[float] = []
+
                     sparse_scores = model.compute_lexical_matching_score(query_sparse, sparse_embeddings)
-                    sparse_scores = sparse_scores.flatten()
                     sparse_scores_tensor = torch.from_numpy(sparse_scores)
-                    top_k_values, top_k_indices = torch.topk(sparse_scores_tensor, k=top_k, largest=True)
-                    #print(f'sparse_scores ({sparse_scores_tensor.dtype}): {sparse_scores_tensor}')
 
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu w sparse_embeddings
-                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
-                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
+                    for query_idx in range(sparse_scores_tensor.shape[0]):  # Iterujemy po każdym zapytaniu
+                        result_scores = sparse_scores_tensor[query_idx].tolist()  # Wszystkie wyniki jako lista
+                        sparse_all_results.append(result_scores)
 
-                # COLBERT
                 elif vector_choice == EmbeddingType.COLBERT.value and colbert_embeddings is not None:
-                    # Obliczamy wyniki dla ColBERT
                     print('FlagEmbedding: COLBERT Search')
-                    colbert_scores = []
-                    query_array = query_colbert[0]
-                    for chunk_embedding in colbert_embeddings:
-                        colbert_scores.append(model.colbert_score(query_array, chunk_embedding))
+                    result_scores: List[float] = []
 
-                    # Konwersja listy wyników na tensor PyTorch z określonym typem danych
-                    colbert_scores_tensor = torch.tensor(colbert_scores)
-                    # Znalezienie top-k indeksów i wyników
-                    top_k_values, top_k_indices = torch.topk(colbert_scores_tensor, k=top_k, largest=True)
-                    # Przygotowanie list wynikowych
-                    result_text = []
-                    result_chunks_metadata = []
-                    result_scores = []
-                    # Pobranie tekstów, metadanych i wyników na podstawie indeksów
-                    for i in range(top_k):
-                        corpus_id = top_k_indices[i].item()  # Indeks fragmentu
-                        result_text.append(text_chunks[corpus_id])  # Tekst fragmentu
-                        result_chunks_metadata.append(chunks_metadata[corpus_id])  # Metadane fragmentu
-                        result_scores.append(top_k_values[i].item())  # Wynik podobieństwa
+                    for query_idx, query_array in enumerate(query_colbert):  # Iterujemy po każdym zapytaniu
+                        colbert_scores = []
+                        for chunk_embedding in colbert_embeddings:
+                            colbert_scores.append(model.colbert_score(query_array, chunk_embedding))
+
+                        colbert_scores_tensor = torch.tensor(colbert_scores)
+                        result_scores = colbert_scores_tensor.tolist()  # Wszystkie wyniki jako lista
+                        colbert_all_results.append(result_scores)
 
 
-            return result_text, result_chunks_metadata, result_scores
+                # Mergowanie wyników dla każdego zapytania
+            final_results = []
+            num_queries = len(query_list)
+            for query_idx in range(num_queries):
+                combined_scores_dict = {}
+
+                # Przetwarzamy wyniki z dense
+                if dense_all_results and len(dense_all_results) > query_idx:
+                    result_scores = dense_all_results[query_idx]
+                    # Normalizacja tylko dla hybrydowego wyszukiwania
+                    if len(vector_choices) > 1:
+                        max_score = max(result_scores) if result_scores else 1.0
+                        if max_score > 0:
+                            result_scores = [score / max_score for score in result_scores]
+                    for i, score in enumerate(result_scores):
+                        combined_scores_dict[i] = combined_scores_dict.get(i, 0) + score
+
+                # Przetwarzamy wyniki z sparse
+                if sparse_all_results and len(sparse_all_results) > query_idx:
+                    result_scores = sparse_all_results[query_idx]
+                    # Normalizacja tylko dla hybrydowego wyszukiwania
+                    if len(vector_choices) > 1:
+                        max_score = max(result_scores) if result_scores else 1.0
+                        if max_score > 0:
+                            result_scores = [score / max_score for score in result_scores]
+                    for i, score in enumerate(result_scores):
+                        combined_scores_dict[i] = combined_scores_dict.get(i, 0) + score
+
+                # Przetwarzamy wyniki z colbert
+                if colbert_all_results and len(colbert_all_results) > query_idx:
+                    result_scores = colbert_all_results[query_idx]
+                    # Normalizacja tylko dla hybrydowego wyszukiwania
+                    if len(vector_choices) > 1:
+                        max_score = max(result_scores) if result_scores else 1.0
+                        if max_score > 0:
+                            result_scores = [score / max_score for score in result_scores]
+                    for i, score in enumerate(result_scores):
+                        combined_scores_dict[i] = combined_scores_dict.get(i, 0) + score
+
+                if not combined_scores_dict:
+                    final_results.append(([], [], []))
+                    continue
+
+                if len(vector_choices) == 1:
+                    # Pojedyncza metoda - bez normalizacji
+                    if dense_all_results and len(dense_all_results) > query_idx:
+                        result_scores = dense_all_results[query_idx]
+                    elif sparse_all_results and len(sparse_all_results) > query_idx:
+                        result_scores = sparse_all_results[query_idx]
+                    elif colbert_all_results and len(colbert_all_results) > query_idx:
+                        result_scores = colbert_all_results[query_idx]
+
+                    top_k_values, top_k_indices = torch.topk(torch.tensor(result_scores), k=top_k, largest=True)
+                    final_text = [text_chunks[i] for i in top_k_indices.tolist()]
+                    final_metadata = [chunks_metadata[i] for i in top_k_indices.tolist()]
+                    final_scores = top_k_values.tolist()
+                    final_results.append((final_text, final_metadata, final_scores))
+                else:
+                    # Hybrydowe wyszukiwanie - z normalizacją już zastosowaną w combined_scores_dict
+                    sorted_indices = sorted(combined_scores_dict.items(), key=lambda x: x[1], reverse=True)
+                    top_k_indices = [idx for idx, _ in sorted_indices][:top_k]
+                    top_k_scores = [score for _, score in sorted_indices][:top_k]
+
+                    final_text = [text_chunks[i] for i in top_k_indices]
+                    final_metadata = [chunks_metadata[i] for i in top_k_indices]
+                    final_scores = top_k_scores
+
+                    final_results.append((final_text, final_metadata, final_scores))
+
+            return final_results
         else:
-            return [], [], []
+            return []
 
 
 
