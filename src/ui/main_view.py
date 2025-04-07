@@ -5,8 +5,11 @@ from src.ui.tabs.add_model_tab import add_model_tab
 
 def _generate_css():
     return """
-    .dropdown1 { width: 33% !important; }
-    .dropdown2 { width: 66% !important; }
+    #custom-textbox {
+        height: 300px;
+        overflow-y: auto;
+        resize: none;
+    }
     """
 
 def build_ui():

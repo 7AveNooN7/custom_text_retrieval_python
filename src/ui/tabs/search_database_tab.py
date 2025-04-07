@@ -18,6 +18,33 @@ def search_database_tab():
         def update_selected_database_engine_state(db_engine: str):
             return db_engine
 
+        ###################### SEARCH OPTIONS ######################
+        features_choices_state = gr.State([])
+        def update_features_choices_state(features_choices: List[str]):
+            return features_choices
+        vectors_choices_state = gr.State([])
+        def update_vectors_choices_state(vector_choices: List[str]):
+            return vector_choices
+
+        ###################### SAVED DATABASE DROPDOWN ######################
+        # STATE
+        selected_database_state = gr.State()
+        def update_selected_database_state(db_engine: str):
+            return db_engine
+
+        # Add state for tracking number of query pairs
+        query_list_state = gr.State([1])
+        added_count_state = gr.State(1)
+        queries_state = gr.State([""])
+
+        ###################### SEARCH TYPE ######################
+        # STATE
+        search_method_choice = gr.State()
+
+        def update_search_method_choice(value: str):
+            return value
+
+
         with gr.Row(
                 variant='compact',
                 equal_height=True
@@ -68,7 +95,7 @@ def search_database_tab():
                     )
 
             with gr.Column(
-                scale=5
+                scale=6
             ):
                 # COMPONENT
                 @gr.render(inputs=[selected_database_engine_state])
@@ -104,26 +131,10 @@ def search_database_tab():
                     )
 
 
-        ###################### SAVED DATABASE DROPDOWN ######################
-        # STATE
-        selected_database_state = gr.State()
-        def update_selected_database_state(db_engine: str):
-            return db_engine
-
-
-
         ###################### QUERY TEXTBOX ######################
         # query_input = gr.Textbox(
         #     label="🔎 Wpisz swoje pytanie"
         # )
-
-
-        # Add state for tracking number of query pairs
-        query_list_state = gr.State([1])
-        added_count_state = gr.State(1)
-
-        queries_state = gr.State([""])
-
 
         # Dynamic rendering of query textboxes and sliders with delete buttons
         @gr.render(inputs=[query_list_state])
@@ -222,153 +233,125 @@ def search_database_tab():
 
 
 
-
-        ###################### SEARCH TYPE ######################
-        # STATE
-        search_method_choice = gr.State()
-        def update_search_method_choice(value: str):
-            return value
-
         # COMPONENT
-        @gr.render(inputs=[selected_database_engine_state, selected_database_state])
-        def create_search_choices(database_type: str, vector_database_instance_json: str):
-            if database_type and vector_database_instance_json:
-                choices: List[Tuple[str, str]] = []
-                vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
+        with gr.Row(
+                equal_height=True
+        ):
+            @gr.render(inputs=[selected_database_engine_state, selected_database_state])
+            def create_search_choices(database_type: str, vector_database_instance_json: str):
+                if database_type and vector_database_instance_json:
+                    choices: List[Tuple[str, str]] = []
+                    vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
 
-                if DatabaseType.from_display_name(database_type).database_search:
-                    choices.append((f'Native {database_type} search', database_type))
-
-
-                choices.append((f'{vector_database_instance.transformer_library.display_name} search', vector_database_instance.transformer_library.display_name))
-                radio_buttons = gr.Radio(
-                    label='Wybierz metodę wyszukiwania',
-                    choices=choices,
-                    value=None
-                )
-
-                radio_buttons.change(
-                    update_search_method_choice,
-                    [radio_buttons],
-                    [search_method_choice]
-                )
-
-                radio_buttons.change(
-                    update_search_method_choice,
-                    [radio_buttons],
-                    [search_method_choice]
-                )
-
-                radio_buttons.change(
-                    update_vectors_choices_state,
-                    [gr.State([])],
-                    [vectors_choices_state]
-                )
-
-                radio_buttons.change(
-                    update_features_choices_state,
-                    [gr.State([])],
-                    [features_choices_state]
-                )
+                    if DatabaseType.from_display_name(database_type).database_search:
+                        choices.append((f'Native {database_type} search', database_type))
 
 
-        ###################### SEARCH OPTIONS ######################
-
-        features_choices_state = gr.State([])
-        def update_features_choices_state(features_choices: List[str]):
-            return features_choices
-
-        vectors_choices_state = gr.State([])
-        def update_vectors_choices_state(vector_choices: List[str]):
-            return vector_choices
-
-        @gr.render(inputs=[search_method_choice, selected_database_engine_state, selected_database_state])
-        def create_lance_db_search_options(search_method: str, database_type: str, vector_database_instance_json: str):
-            if search_method and database_type and vector_database_instance_json:
-                search_type = get_search_type(search_method=search_method)
-                vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
-                saved_database_supported_embeddings: List[str] = [embedding.value for embedding in
-                                                                  vector_database_instance.embedding_types]
-                choices = []
-                if isinstance(search_type, DatabaseType):
-                    database_type_enum: DatabaseType = DatabaseType.from_display_name(search_method)
-                    database_supported_embeddings: List[str] = [embedding.value for embedding in database_type_enum.supported_embeddings]
-                    choices = list(set(saved_database_supported_embeddings) & set(database_supported_embeddings))
-
-                elif isinstance(search_type, TransformerLibrary):
-                    library_type_enum: TransformerLibrary = TransformerLibrary.from_display_name(search_method)
-                    library_supported_embeddings: List[str] = [embedding.value for embedding in library_type_enum.supported_embeddings]
-                    choices = list(set(saved_database_supported_embeddings) & set(library_supported_embeddings))
-                with gr.Row(
-                        variant='compact',
-                        equal_height=True
-                ):
-                    embeddings_checkboxes = gr.CheckboxGroup(
-                        label='Wybierz typy wektorów, które zostaną użyte do wyszukiwania wektorowego',
-                        choices=choices
+                    choices.append((f'{vector_database_instance.transformer_library.display_name} search', vector_database_instance.transformer_library.display_name))
+                    radio_buttons = gr.Radio(
+                        label='Wybierz metodę wyszukiwania',
+                        choices=choices,
+                        value=None
                     )
 
-                    embeddings_checkboxes.change(
+                    radio_buttons.change(
+                        update_search_method_choice,
+                        [radio_buttons],
+                        [search_method_choice]
+                    )
+
+                    radio_buttons.change(
+                        update_search_method_choice,
+                        [radio_buttons],
+                        [search_method_choice]
+                    )
+
+                    radio_buttons.change(
                         update_vectors_choices_state,
-                        embeddings_checkboxes,
-                        vectors_choices_state
+                        [gr.State([])],
+                        [vectors_choices_state]
                     )
 
-                    features_choices = []
-                    if search_type == DatabaseType.LANCE_DB and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in vector_database_instance.features:
-                        label_and_value = (f'{DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value} (use_tantivy={vector_database_instance.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]["use_tantivy"]})', DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value)
-                        features_choices.append(label_and_value)
+                    radio_buttons.change(
+                        update_features_choices_state,
+                        [gr.State([])],
+                        [features_choices_state]
+                    )
 
-                    if features_choices:
-                        features_checkboxes = gr.CheckboxGroup(
-                            label='Inne typy wyszukiwania',
-                            choices=features_choices
+
+            @gr.render(inputs=[search_method_choice, selected_database_engine_state, selected_database_state])
+            def create_lance_db_search_options(search_method: str, database_type: str, vector_database_instance_json: str):
+                if search_method and database_type and vector_database_instance_json:
+                    search_type = get_search_type(search_method=search_method)
+                    vector_database_instance = VectorDatabaseInfo.from_dict(json.loads(vector_database_instance_json))
+                    saved_database_supported_embeddings: List[str] = [embedding.value for embedding in
+                                                                      vector_database_instance.embedding_types]
+                    choices = []
+                    if isinstance(search_type, DatabaseType):
+                        database_type_enum: DatabaseType = DatabaseType.from_display_name(search_method)
+                        database_supported_embeddings: List[str] = [embedding.value for embedding in database_type_enum.supported_embeddings]
+                        choices = list(set(saved_database_supported_embeddings) & set(database_supported_embeddings))
+
+                    elif isinstance(search_type, TransformerLibrary):
+                        library_type_enum: TransformerLibrary = TransformerLibrary.from_display_name(search_method)
+                        library_supported_embeddings: List[str] = [embedding.value for embedding in library_type_enum.supported_embeddings]
+                        choices = list(set(saved_database_supported_embeddings) & set(library_supported_embeddings))
+                    with gr.Row(
+
+                    ):
+                        embeddings_checkboxes = gr.CheckboxGroup(
+                            label='Wybierz typy wektorów, które zostaną użyte do wyszukiwania wektorowego',
+                            choices=choices
                         )
 
-                        features_checkboxes.change(
-                            update_features_choices_state,
-                            features_checkboxes,
-                            features_choices_state
+                        embeddings_checkboxes.change(
+                            update_vectors_choices_state,
+                            embeddings_checkboxes,
+                            vectors_choices_state
                         )
+
+                        features_choices = []
+                        if search_type == DatabaseType.LANCE_DB and DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in vector_database_instance.features:
+                            label_and_value = (f'{DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value} (use_tantivy={vector_database_instance.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]["use_tantivy"]})', DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value)
+                            features_choices.append(label_and_value)
+
+                        if features_choices:
+                            features_checkboxes = gr.CheckboxGroup(
+                                label='Inne typy wyszukiwania',
+                                choices=features_choices
+                            )
+
+                            features_checkboxes.change(
+                                update_features_choices_state,
+                                features_checkboxes,
+                                features_choices_state
+                            )
 
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
-        # def test_1(queries):
-        #     print(f'queries: {queries}')
-        #
-        # test_btn = gr.Button("🔍 Test")
-        # test_btn.click(
-        #     test_1,
-        #     queries_state,
-        #     []
-        # )
-
-
-        with gr.Row():
-
-            token_output = gr.Number(
-                label="Token count:",
-                interactive=False
-            )
-
-            characters_output = gr.Number(
-                label="Characters count:",
-                interactive=False
-            )
-
-
-        search_output = gr.Textbox(
-            label="Wyniki wyszukiwania:",
-            interactive=False
-        )
+        search_output_state = gr.State([])
 
         search_btn.click(
             ui_search_database,
-            [selected_database_engine_state, selected_database_state, queries_state, top_k_slider, search_method_choice, vectors_choices_state, features_choices_state],
-            [token_output, characters_output, search_output]
+            [selected_database_engine_state, selected_database_state, queries_state, top_k_slider, search_method_choice,
+             vectors_choices_state, features_choices_state],
+            [search_output_state]
         )
 
+        @gr.render(inputs=[search_output_state])
+        def generate_tabs(search_output):
+            for i in range(len(search_output)):
+                print(f"{i}: {search_output[i]}")
+                with gr.Tab(
+                    label=f"Odpowiedz {i+1}"
+                ):
+                    text_display = gr.Textbox(
+                        label="Wyniki wyszukiwania:",
+                        interactive=False,
+                        value=search_output[i],
+                        lines=100
+                    )
 
 def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
@@ -381,26 +364,27 @@ def ui_search_database(database_type: str, vector_database_instance_json: str, q
         vector_choices=vector_choices,
         features_choices=features_choices
     )
-    token_count = count_tokens(retrieved_text)
-    characters_output = len(retrieved_text)
-    return token_count, characters_output, retrieved_text
+    # token_count = count_tokens(retrieved_text)
+    # characters_output = len(retrieved_text)
+    # for i in range(len(retrieved_text)):
+    #     print(f"{i}: {search_output}")
+    return retrieved_text
 
+# def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
+#     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
+#     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
+#     retrieved_text = perform_search(
+#         vector_database_instance=vector_database_instance,
+#         search_method=search_method,
+#         query_list=query_list,
+#         top_k=top_k,
+#         vector_choices=vector_choices,
+#         features_choices=features_choices
+#     )
+#     token_count = count_tokens(retrieved_text)
+#     characters_output = len(retrieved_text)
+#     return token_count, characters_output, retrieved_text
 
-css = """
-.minimal-button {
-    padding: 2px 5px !important;  /* Minimalne wypełnienie */
-    margin: 0 !important;         /* Usuwa marginesy */
-    width: 100px !important;       /* Stała, bardzo mała szerokość */
-    height: 30px !important;      /* Stała, mała wysokość */
-    display: flex;                /* Centruje ikonę */
-    align-items: center;
-    justify-content: center;
-}
-"""
-
-# def _set_width_css = """
-#
-# """
 
 def test_component(query_inputs_state, top_k_values_state):
     print(f'query: {query_inputs_state}')

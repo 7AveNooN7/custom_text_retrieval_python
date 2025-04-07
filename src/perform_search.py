@@ -38,7 +38,7 @@ def perform_search(
     final_results: List[Tuple[List[str], List[ChunkMetadataModel], List[float]]] = []
 
     if isinstance(search_type, DatabaseType):
-        final_results = vector_database_instance.perform_search(query_list=query_list, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)[0]
+        final_results = vector_database_instance.perform_search(query_list=query_list, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
     elif isinstance(search_type, TransformerLibrary):
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
@@ -67,7 +67,7 @@ def perform_search(
 
     final_response = []
     for index, final_result in enumerate(final_results):
-        result_text, result_chunks_metadata, result_scores = final_result[index]
+        result_text, result_chunks_metadata, result_scores = final_result
         response = ""
         for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
             response += (

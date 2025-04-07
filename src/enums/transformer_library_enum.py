@@ -461,9 +461,7 @@ class TransformerLibrary(Enum):
 
         if self == TransformerLibrary.SentenceTransformers:
             print('SentenceTransformers Search')
-            result_text: List[str] = []
-            result_chunks_metadata: List[ChunkMetadataModel] = []
-            result_scores: List[float] = []
+
 
 
             dense_embeddings = embeddings[0] # ONLY DENSE
@@ -476,6 +474,9 @@ class TransformerLibrary(Enum):
 
             results = util.semantic_search(query_embeddings_tensor, dense_embeddings_tensor, top_k=top_k)
             for result in results:
+                result_text: List[str] = []
+                result_chunks_metadata: List[ChunkMetadataModel] = []
+                result_scores: List[float] = []
                 for result_from_dict in result:
                     corpus_id: int = result_from_dict['corpus_id']
                     result_text.append(text_chunks[corpus_id])
