@@ -34,9 +34,11 @@ def perform_search(
     result_text: List[str] = []
     result_chunks_metadata: List[ChunkMetadataModel] = []
     result_scores: List[float] = []
-    response = ""
+
+    final_results: List[Tuple[List[str], List[ChunkMetadataModel], List[float]]] = []
+
     if isinstance(search_type, DatabaseType):
-        result_text, result_chunks_metadata, result_scores = vector_database_instance.perform_search(query_list=query_list, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)
+        final_results = vector_database_instance.perform_search(query_list=query_list, top_k=top_k, vector_choices=vector_choices, features_choices=features_choices)[0]
     elif isinstance(search_type, TransformerLibrary):
         # Przypisanie typów po rozpakowaniu
         text_chunks: List[str]
@@ -53,7 +55,7 @@ def perform_search(
         #     traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
         #     return  # Zatrzymuje dalsze działanie funkcji
 
-        result_text, result_chunks_metadata, result_scores = search_type.perform_search(
+        final_results = search_type.perform_search(
             text_chunks=text_chunks,
             chunks_metadata=chunks_metadata,
             embeddings=embeddings,
@@ -61,16 +63,22 @@ def perform_search(
             vector_database_instance=vector_database_instance,
             top_k=top_k,
             vector_choices=vector_choices
-        )[0]
-
-    for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
-        response += (
-            f"📄 File: {metadata.source} "
-            f"(fragment {metadata.fragment_id}, score: {score:.4f}, model: {vector_database_instance.embedding_model_name}, characters: {metadata.characters_count}, tokens: {metadata.tiktoken_tokens_count} (TikToken), {metadata.model_tokenizer_token_count} (Model Tokenizer))\n"
-            f"{text}\n\n"
         )
 
-    return response
+    final_response = []
+    for index, final_result in enumerate(final_results):
+        result_text, result_chunks_metadata, result_scores = final_result[index]
+        response = ""
+        for text, metadata, score in zip(result_text, result_chunks_metadata, result_scores):
+            response += (
+                f"📄 File: {metadata.source} "
+                f"(fragment {metadata.fragment_id}, score: {score:.4f}, model: {vector_database_instance.embedding_model_name}, characters: {metadata.characters_count}, tokens: {metadata.tiktoken_tokens_count} (TikToken), {metadata.model_tokenizer_token_count} (Model Tokenizer))\n"
+                f"{text}\n\n"
+            )
+        final_response.append(response)
+
+
+    return final_response
 
 
 

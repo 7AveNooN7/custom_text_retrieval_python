@@ -18,47 +18,81 @@ def search_database_tab():
         def update_selected_database_engine_state(db_engine: str):
             return db_engine
 
-        # COMPONENT
-        @gr.render(inputs=[])
-        def create_database_engine_dropdown():
-            database_type_dropdown = gr.Dropdown(
-                choices=[db.display_name for db in DatabaseType],
-                value=None,
-                label="Wybierz silnik bazy wektorowej"
-            )
+        with gr.Row():
 
-            # ZMIENIA STAN SAMEGO SIEBIE
-            database_type_dropdown.change(
-                update_selected_database_engine_state,
-                database_type_dropdown,
-                selected_database_engine_state
-            )
+            # COMPONENT
+            @gr.render(inputs=[])
+            def create_database_engine_dropdown():
+                database_type_dropdown = gr.Dropdown(
+                    choices=[db.display_name for db in DatabaseType],
+                    value=None,
+                    label="Wybierz silnik bazy wektorowej"
+                )
 
-            # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z saved_database_dropdown
-            database_type_dropdown.change(
-                update_selected_database_state,
-                gr.State(None),
-                selected_database_state
-            )
+                # ZMIENIA STAN SAMEGO SIEBIE
+                database_type_dropdown.change(
+                    update_selected_database_engine_state,
+                    database_type_dropdown,
+                    selected_database_engine_state
+                )
 
-            # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z search_method_choice
-            database_type_dropdown.change(
-                update_search_method_choice,
-                gr.State(None),
-                search_method_choice
-            )
+                # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z saved_database_dropdown
+                database_type_dropdown.change(
+                    update_selected_database_state,
+                    gr.State(None),
+                    selected_database_state
+                )
 
-            database_type_dropdown.change(
-                update_vectors_choices_state,
-                gr.State([]),
-                vectors_choices_state
-            )
+                # GDY ZMIENIA SIE WYBOR SILNIKA BAZY ZERUJEMY WYBÓR Z search_method_choice
+                database_type_dropdown.change(
+                    update_search_method_choice,
+                    gr.State(None),
+                    search_method_choice
+                )
 
-            database_type_dropdown.change(
-                update_features_choices_state,
-                gr.State([]),
-                features_choices_state
-            )
+                database_type_dropdown.change(
+                    update_vectors_choices_state,
+                    gr.State([]),
+                    vectors_choices_state
+                )
+
+                database_type_dropdown.change(
+                    update_features_choices_state,
+                    gr.State([]),
+                    features_choices_state
+                )
+
+            # COMPONENT
+            @gr.render(inputs=[selected_database_engine_state])
+            def create_saved_database_dropdown(selected_database_engine: str):
+                choices = fetch_saved_databases(selected_database_engine)
+                saved_database_dropdown = gr.Dropdown(
+                    choices=choices,
+                    value=None,
+                    label="📂 Wybierz bazę (Wyszukiwanie)"
+                )
+                saved_database_dropdown.change(
+                    update_selected_database_state,
+                    saved_database_dropdown,
+                    selected_database_state
+                )
+                # # GDY ZMIENIA SIE WYBOR ZAPISANEJ BAZY ZERUJEMY WYBÓR Z search_method_choice
+                saved_database_dropdown.change(
+                    update_search_method_choice,
+                    gr.State(None),
+                    search_method_choice
+                )
+                saved_database_dropdown.change(
+                    update_vectors_choices_state,
+                    gr.State([]),
+                    vectors_choices_state
+                )
+                saved_database_dropdown.change(
+                    update_features_choices_state,
+                    gr.State([]),
+                    features_choices_state
+                )
+
 
 
         ###################### SAVED DATABASE DROPDOWN ######################
@@ -67,41 +101,7 @@ def search_database_tab():
         def update_selected_database_state(db_engine: str):
             return db_engine
 
-        # COMPONENT
-        @gr.render(inputs=[selected_database_engine_state])
-        def create_saved_database_dropdown(selected_database_engine: str):
-            if selected_database_engine:
-                choices = fetch_saved_databases(selected_database_engine)
-                saved_database_dropdown = gr.Dropdown(
-                    choices=choices,
-                    value=None,
-                    label="📂 Wybierz bazę (Wyszukiwanie)"
-                )
 
-                saved_database_dropdown.change(
-                    update_selected_database_state,
-                    saved_database_dropdown,
-                    selected_database_state
-                )
-
-                # # GDY ZMIENIA SIE WYBOR ZAPISANEJ BAZY ZERUJEMY WYBÓR Z search_method_choice
-                saved_database_dropdown.change(
-                    update_search_method_choice,
-                    gr.State(None),
-                    search_method_choice
-                )
-
-                saved_database_dropdown.change(
-                    update_vectors_choices_state,
-                    gr.State([]),
-                    vectors_choices_state
-                )
-
-                saved_database_dropdown.change(
-                    update_features_choices_state,
-                    gr.State([]),
-                    features_choices_state
-                )
 
         ###################### QUERY TEXTBOX ######################
         # query_input = gr.Textbox(
@@ -155,7 +155,8 @@ def search_database_tab():
                     query_input.input(
                         fn=update_queries_state,
                         inputs=text_boxes,
-                        outputs=queries_state
+                        outputs=queries_state,
+                        trigger_mode='always_last'
                     )
 
                     text_boxes.append(query_input)
@@ -319,15 +320,15 @@ def search_database_tab():
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
-        def test_1(queries):
-            print(f'queries: {queries}')
-
-        test_btn = gr.Button("🔍 Test")
-        test_btn.click(
-            test_1,
-            queries_state,
-            []
-        )
+        # def test_1(queries):
+        #     print(f'queries: {queries}')
+        #
+        # test_btn = gr.Button("🔍 Test")
+        # test_btn.click(
+        #     test_1,
+        #     queries_state,
+        #     []
+        # )
 
 
         with gr.Row():

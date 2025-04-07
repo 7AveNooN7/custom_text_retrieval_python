@@ -398,7 +398,7 @@ class TransformerLibrary(Enum):
 
         return basic_dict
 
-    def generate_embeddings(self, text_chunks_or_queries: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[List[np.ndarray]], Optional[List[List[dict[str, float]]]], Optional[List[List[np.ndarray]]]]:
+    def generate_embeddings(self, text_chunks_or_queries: List[str], vector_database_instance: "VectorDatabaseInfo") -> Tuple[Optional[np.ndarray], Optional[List[dict[str, float]]], Optional[List[np.ndarray]]]:
         """
         Generate embeddings based on the enum type and requested embedding type.
         transformer_library: TransformerLibrary = vector_database_instance.transformer_library
@@ -550,7 +550,7 @@ class TransformerLibrary(Enum):
             for query_idx in range(num_queries):
                 combined_scores_dict = {}
 
-                # Przetwarzamy wyniki z dense
+                # Przetwarzam wyniki z dense
                 if dense_all_results and len(dense_all_results) > query_idx:
                     result_scores = dense_all_results[query_idx]
                     # Normalizacja tylko dla hybrydowego wyszukiwania
@@ -561,7 +561,7 @@ class TransformerLibrary(Enum):
                     for i, score in enumerate(result_scores):
                         combined_scores_dict[i] = combined_scores_dict.get(i, 0) + score
 
-                # Przetwarzamy wyniki z sparse
+                # Przetwarzam wyniki z sparse
                 if sparse_all_results and len(sparse_all_results) > query_idx:
                     result_scores = sparse_all_results[query_idx]
                     # Normalizacja tylko dla hybrydowego wyszukiwania
@@ -572,7 +572,7 @@ class TransformerLibrary(Enum):
                     for i, score in enumerate(result_scores):
                         combined_scores_dict[i] = combined_scores_dict.get(i, 0) + score
 
-                # Przetwarzamy wyniki z colbert
+                # Przetwarzam wyniki z colbert
                 if colbert_all_results and len(colbert_all_results) > query_idx:
                     result_scores = colbert_all_results[query_idx]
                     # Normalizacja tylko dla hybrydowego wyszukiwania
