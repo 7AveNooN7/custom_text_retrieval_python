@@ -3,8 +3,14 @@ from src.ui.tabs.create_database_tab import create_database_tab
 from src.ui.tabs.search_database_tab import search_database_tab
 from src.ui.tabs.add_model_tab import add_model_tab
 
+def _generate_css():
+    return """
+    .dropdown1 { width: 33% !important; }
+    .dropdown2 { width: 66% !important; }
+    """
+
 def build_ui():
-    with gr.Blocks() as demo:
+    with gr.Blocks(css=_generate_css()) as demo:
         gr.Markdown("# 🔍 Wyszukiwarka dokumentów i Zarządzanie Bazami")
 
         model_dropdown_choices = create_database_tab()  # TERAZ PRZECHOWUJEMY ZWRÓCONY `model_dropdown`
