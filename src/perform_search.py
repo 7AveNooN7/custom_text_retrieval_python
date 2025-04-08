@@ -28,12 +28,9 @@ def perform_search(
         top_k: int,
         vector_choices: List[str],
         features_choices: List[str]
-):
+) -> List[Tuple[List[str], List[ChunkMetadataModel], List[float]]]:
     print(f'FUNCTION: perform_search')
     search_type = get_search_type(search_method=search_method)
-    result_text: List[str] = []
-    result_chunks_metadata: List[ChunkMetadataModel] = []
-    result_scores: List[float] = []
 
     final_results: List[Tuple[List[str], List[ChunkMetadataModel], List[float]]] = []
 

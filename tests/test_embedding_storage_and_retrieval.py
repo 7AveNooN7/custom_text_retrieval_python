@@ -33,17 +33,21 @@ def temp_database_resources():
     # Przygotowanie zasobów
     temp_dir = tempfile.mkdtemp()
     db_paths = {}
-    test_text = (
-        "Vitamin C is found in citrus fruits like oranges and lemons."
-        "The Earth orbits the Sun in approximately 365.25 days."
-        "Water boils at 100 degrees Celsius at sea level."
-        "Photosynthesis in plants requires sunlight and carbon dioxide."
+    corpus = (
+        "The human body maintains a core temperature of approximately 37 degrees Celsius under normal conditions. "
+        "Photosynthesis in green plants converts carbon dioxide and water into glucose using sunlight as an energy source. "
+        "DNA replication occurs during the S phase of the cell cycle, ensuring each daughter cell receives an identical set of chromosomes. "
+        "The greenhouse effect is caused by gases like carbon dioxide trapping heat in the Earth's atmosphere. "
+        "Mitochondria are organelles responsible for producing ATP, the primary energy currency of the cell. "
+        "The speed of light in a vacuum is approximately 299,792 kilometers per second, a universal constant."
     )
+
+
     test_file_path = os.path.join(temp_dir, "test.txt")
     with open(test_file_path, "w", encoding="utf-8") as f:
-        f.write(test_text)
+        f.write(corpus)
 
-    yield temp_dir, test_file_path, db_paths
+    yield temp_dir, test_file_path, db_paths, corpus
 
     # Sprzątanie po wszystkich testach w module
     gc.collect()
@@ -77,8 +81,8 @@ def temp_database_resources():
         (DatabaseType.SQLITE, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.SentenceTransformers)
     ]
 )
-def test_embedding_storage_retrieval_search(db_type, embedding_types, float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
-    temp_dir, test_file_path, db_paths = temp_database_resources
+def test_embedding_storage_retrieval_search(db_type, embedding_types: List[EmbeddingType], float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
+    temp_dir, test_file_path, db_paths, corpus = temp_database_resources
     monkeypatch.setattr("src.enums.transformer_library_enum._model_cache", model_cache)
 
     db_name = f'test_{len(embedding_types)}_{float_precision_enum.value}_{transformer_library.display_name}'
@@ -207,6 +211,47 @@ def test_embedding_storage_retrieval_search(db_type, embedding_types, float_prec
                     f"Retrieved: {colbert_ret[i]}\n"
                     f"Diff: {np.abs(colbert_gen[i] - colbert_ret[i])}"
                 )
+
+        queries = [
+            "How does the body regulate its internal heat?",
+            "What is the end product of the process that plants use to harness solar energy?",
+            "At what stage do cells duplicate their genetic material?",
+            "Why does the Earth's climate retain warmth?",
+            "Which cellular structure generates the energy molecule used by cells?",
+            "What is the velocity of electromagnetic waves in empty space?",
+        ]
+
+        if db_type != DatabaseType.SQLITE:
+            # final_results: List[Tuple[List[str], List[ChunkMetadataModel], List[float]]] = []
+            final_results = vector_database_instance.perform_search(query_list=queries, top_k=3, vector_choices=[et.value for et in embedding_types], features_choices={})
+
+            for index, query_result in enumerate(final_results):
+                text_results = query_result[0] # [0] wybiera z tuple text: Tuple[List[str]...
+                top_text_result = text_results[0]  # [0] bo sprawdzam najwiekszy score: List[str]
+                assert top_text_result == generated_text_chunks[index]
+                assert top_text_result == retrieved_text_chunks[index]
+                for text_result in text_results:
+                    assert text_result in generated_text_chunks
+                    assert text_result in retrieved_text_chunks
+
+        final_results = transformer_library.perform_search(
+            text_chunks=retrieved_text_chunks,
+            chunks_metadata=retrieved_chunks_metadata,
+            embeddings=retrieved_embeddings,
+            query_list=queries,
+            vector_database_instance=vector_database_instance,
+            top_k=3,
+            vector_choices=[et.value for et in embedding_types]
+        )
+
+        for index, query_result in enumerate(final_results):
+            text_results = query_result[0]  # [0] wybiera z tuple text: Tuple[List[str]...
+            top_text_result = text_results[0]  # [0] bo sprawdzam najwiekszy score: List[str]
+            assert top_text_result == generated_text_chunks[index]
+            assert top_text_result == retrieved_text_chunks[index]
+            for text_result in text_results:
+                assert text_result in generated_text_chunks
+                assert text_result in retrieved_text_chunks
 
     finally:
         gc.collect()
