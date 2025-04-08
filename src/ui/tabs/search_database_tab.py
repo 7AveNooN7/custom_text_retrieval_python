@@ -330,32 +330,37 @@ def search_database_tab():
 
         search_btn = gr.Button("🔍 Wyszukaj")
 
+
         search_output_state = gr.State([])
 
         search_btn.click(
             ui_search_database,
             [selected_database_engine_state, selected_database_state, queries_state, top_k_slider, search_method_choice,
              vectors_choices_state, features_choices_state],
-            [search_output_state]
+            [search_output_state, search_btn]
         )
 
         @gr.render(inputs=[search_output_state])
         def generate_tabs(search_output):
-            for i in range(len(search_output)):
-                print(f"{i}: {search_output[i]}")
-                with gr.Tab(
-                    label=f"Odpowiedz {i+1}"
-                ):
-                    text_display = gr.Textbox(
-                        label="Wyniki wyszukiwania:",
-                        interactive=False,
-                        value=search_output[i],
-                        lines=100
-                    )
+            if isinstance(search_output, (int, float)):
+                gr.Label(render=False)
+            else:
+                for i in range(len(search_output)):
+                    print(f"{i}: {search_output[i]}")
+                    with gr.Tab(
+                        label=f"Odpowiedz {i+1}"
+                    ):
+                        text_display = gr.Textbox(
+                            label="Wyniki wyszukiwania:",
+                            interactive=False,
+                            value=search_output[i],
+                            lines=100
+                        )
 
 def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
+    yield 1, "Trwa wyszukiwanie"
     retrieved_text = perform_search(
         vector_database_instance=vector_database_instance,
         search_method=search_method,
@@ -368,22 +373,9 @@ def ui_search_database(database_type: str, vector_database_instance_json: str, q
     # characters_output = len(retrieved_text)
     # for i in range(len(retrieved_text)):
     #     print(f"{i}: {search_output}")
-    return retrieved_text
+    yield 100, "Trwa wyszukiwanie"
+    yield retrieved_text, "🔍 Wyszukaj"
 
-# def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
-#     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
-#     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
-#     retrieved_text = perform_search(
-#         vector_database_instance=vector_database_instance,
-#         search_method=search_method,
-#         query_list=query_list,
-#         top_k=top_k,
-#         vector_choices=vector_choices,
-#         features_choices=features_choices
-#     )
-#     token_count = count_tokens(retrieved_text)
-#     characters_output = len(retrieved_text)
-#     return token_count, characters_output, retrieved_text
 
 
 def test_component(query_inputs_state, top_k_values_state):

@@ -77,7 +77,7 @@ def temp_database_resources():
         (DatabaseType.SQLITE, [EmbeddingType.DENSE], FloatPrecisionPointEnum.FP32, TransformerLibrary.SentenceTransformers)
     ]
 )
-def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
+def test_embedding_storage_retrieval_search(db_type, embedding_types, float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
     temp_dir, test_file_path, db_paths = temp_database_resources
     monkeypatch.setattr("src.enums.transformer_library_enum._model_cache", model_cache)
 
@@ -154,6 +154,10 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
         assert len(generated_text_chunks) == len(
             retrieved_text_chunks), f"TEXT CHUNKS: Mismatch in number of chunks: generated={len(generated_text_chunks)} vs retrieved={len(retrieved_text_chunks)}"
 
+        for generated_chunk, retrieved_chunk in zip(generated_text_chunks, retrieved_text_chunks):
+            assert generated_chunk == retrieved_chunk
+
+
         for i in range(len(generated_text_chunks)):
             assert generated_text_chunks[i] == retrieved_text_chunks[i], (
                 f"TEXT CHUNKS: Chunk {i} differs!\n"
@@ -203,8 +207,6 @@ def test_embedding_storage_and_retrieval(db_type, embedding_types, float_precisi
                     f"Retrieved: {colbert_ret[i]}\n"
                     f"Diff: {np.abs(colbert_gen[i] - colbert_ret[i])}"
                 )
-
-
 
     finally:
         gc.collect()

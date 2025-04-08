@@ -34,6 +34,7 @@ def _get_cached_model(transformer_library: "TransformerLibrary", model_name: str
         if len(_model_cache) >= MAX_CACHE_SIZE:
             _model_cache.popitem(last=False)  # Usuwa najstarszy element
         _model_cache[key] = model
+    print(f'MODEL REUSED, key: {key}')
     return _model_cache[key]
 
 
@@ -420,7 +421,7 @@ class TransformerLibrary(Enum):
             print(f'SentenceTransformers: Generate Embeddings')
             dense_embeddings = embedding_model.encode(text_chunks_or_queries, show_progress_bar=True, convert_to_numpy=True)
 
-            print(f'dense_embeddings: {dense_embeddings.shape}')
+            #print(f'dense_embeddings: {dense_embeddings.shape}')
 
         elif self == TransformerLibrary.FlagEmbedding:
             print(f'FlagEmbedding: Generate Embeddings')
@@ -434,11 +435,11 @@ class TransformerLibrary(Enum):
             )
 
             dense_embeddings = generated_embeddings.get('dense_vecs', None)
-            print(f'dense_embeddings: {dense_embeddings.shape}')
+            #print(f'dense_embeddings: {dense_embeddings.shape}')
             sparse_embeddings = generated_embeddings.get('lexical_weights', None)
-            print(f'sparse_embeddings: {len(sparse_embeddings)}')
+            #print(f'sparse_embeddings: {len(sparse_embeddings)}')
             colbert_embeddings = generated_embeddings.get('colbert_vecs', None)
-            print(f'colbert_embeddings: {len(colbert_embeddings)}')
+            #print(f'colbert_embeddings: {len(colbert_embeddings)}')
 
 
         return dense_embeddings, sparse_embeddings, colbert_embeddings
