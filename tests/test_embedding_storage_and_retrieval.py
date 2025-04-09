@@ -8,15 +8,16 @@ import tempfile
 import shutil
 import os
 import time
-from src.embeddings_type_checking import embedding_types_checking
-from src.enums.database_type_enum import DatabaseType
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.floating_precision_enum import FloatPrecisionPointEnum
-from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
-from src.enums.overlap_type import OverlapTypeEnum
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.chunk_metadata_model import ChunkMetadataModel
-from src.save_to_database import save_to_database, generate_text_chunks, generate_embeddings
+
+from src.text_retrieval.embeddings_type_checking import embedding_types_checking
+from src.text_retrieval.enums.database_type_enum import DatabaseType
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from src.text_retrieval.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.text_retrieval.enums.overlap_type import OverlapTypeEnum
+from src.text_retrieval.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.models.chunk_metadata_model import ChunkMetadataModel
+from src.text_retrieval.save_to_database import generate_text_chunks, generate_embeddings
 
 # Ustawienie logowania
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +42,6 @@ def temp_database_resources():
         "Mitochondria are organelles responsible for producing ATP, the primary energy currency of the cell. "
         "The speed of light in a vacuum is approximately 299,792 kilometers per second, a universal constant."
     )
-
 
     test_file_path = os.path.join(temp_dir, "test.txt")
     with open(test_file_path, "w", encoding="utf-8") as f:
@@ -83,7 +83,7 @@ def temp_database_resources():
 )
 def test_embedding_storage_retrieval_search(db_type, embedding_types: List[EmbeddingType], float_precision_enum, transformer_library, temp_database_resources, model_cache, monkeypatch):
     temp_dir, test_file_path, db_paths, corpus = temp_database_resources
-    monkeypatch.setattr("src.enums.transformer_library_enum._model_cache", model_cache)
+    monkeypatch.setattr("src.text_retrieval.enums.transformer_library_enum._model_cache", model_cache)
 
     db_name = f'test_{len(embedding_types)}_{float_precision_enum.value}_{transformer_library.display_name}'
     model_name = 'BAAI/bge-m3'

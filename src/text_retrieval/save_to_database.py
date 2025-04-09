@@ -11,12 +11,12 @@ import tiktoken
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from src.enums.overlap_type import OverlapTypeEnum
-from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.chunk_metadata_model import ChunkMetadataModel
-from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
-from src.models.vector_database_info import VectorDatabaseInfo
+from src.text_retrieval.enums.overlap_type import OverlapTypeEnum
+from src.text_retrieval.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.models.chunk_metadata_model import ChunkMetadataModel
+from src.text_retrieval.models.downloaded_embedding_model import DownloadedEmbeddingModel
+from src.text_retrieval.models.vector_database_info import VectorDatabaseInfo
 
 
 def split_text_into_characters_chunks_by_characters(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:

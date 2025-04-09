@@ -4,8 +4,8 @@ import shutil
 from typing import List, Dict
 
 from src.config import MODEL_FOLDER
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
 
 class DownloadedEmbeddingModel:
     """Reprezentuje pobrany model z katalogu."""

@@ -5,14 +5,14 @@ import time
 import gradio as gr
 from typing import List, Tuple, Optional
 from src.config import DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, MODEL_FOLDER
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.floating_precision_enum import FloatPrecisionPointEnum
-from src.enums.overlap_type import OverlapTypeEnum
-from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.enums.database_type_enum import DatabaseType, DatabaseFeature
-from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
-from src.save_to_database import save_to_database
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from src.text_retrieval.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.text_retrieval.enums.overlap_type import OverlapTypeEnum
+from src.text_retrieval.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.enums.database_type_enum import DatabaseType, DatabaseFeature
+from src.text_retrieval.models.downloaded_embedding_model import DownloadedEmbeddingModel
+from src.text_retrieval.save_to_database import save_to_database
 
 
 def create_database_tab():

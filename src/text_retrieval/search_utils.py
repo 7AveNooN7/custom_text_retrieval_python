@@ -1,7 +1,7 @@
 import json
 
 import tiktoken
-from src.enums.database_type_enum import DatabaseType
+from src.text_retrieval.enums.database_type_enum import DatabaseType
 
 # Tokenizer tiktoken
 tokenizer = tiktoken.get_encoding("cl100k_base")

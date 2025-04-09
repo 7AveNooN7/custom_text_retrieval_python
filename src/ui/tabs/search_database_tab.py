@@ -2,12 +2,11 @@ import json
 from typing import List, Tuple
 
 import gradio as gr
-from src.enums.database_type_enum import DatabaseType, DatabaseFeature
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.vector_database_info import VectorDatabaseInfo
-from src.perform_search import perform_search, get_search_type
-from src.search_utils import count_tokens, fetch_saved_databases
+from src.text_retrieval.enums.database_type_enum import DatabaseType, DatabaseFeature
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.models.vector_database_info import VectorDatabaseInfo
+from src.text_retrieval.perform_search import perform_search, get_search_type
+from src.text_retrieval.search_utils import fetch_saved_databases
 
 def search_database_tab():
     with ((gr.Tab("🔎 Wyszukiwanie w bazie"))):

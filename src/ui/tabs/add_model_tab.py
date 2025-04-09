@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import gradio as gr
 import json
-from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
+from src.text_retrieval.models.downloaded_embedding_model import DownloadedEmbeddingModel
 from src.ui.tabs.create_database_tab import create_downloaded_model_label
 
 

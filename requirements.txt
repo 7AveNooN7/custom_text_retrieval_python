@@ -18,3 +18,5 @@ markdown-it-py
 FlagEmbedding
 overrides
 transformers
+PyMuPDF
+pytest

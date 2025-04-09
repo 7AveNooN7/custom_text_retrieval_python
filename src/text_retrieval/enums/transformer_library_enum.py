@@ -3,18 +3,17 @@ import os
 import shutil
 from collections import OrderedDict
 from enum import Enum
-from pathlib import Path
 from typing import List, Tuple, Optional
 import torch
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 from src.config import MODEL_FOLDER
-from src.enums.embedding_type_enum import EmbeddingType
-from FlagEmbedding import FlagModel, BGEM3FlagModel
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from FlagEmbedding import BGEM3FlagModel
 from huggingface_hub import snapshot_download
 
-from src.enums.floating_precision_enum import FloatPrecisionPointEnum
-from src.models.chunk_metadata_model import ChunkMetadataModel
+from src.text_retrieval.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.text_retrieval.models.chunk_metadata_model import ChunkMetadataModel
 
 _model_cache = OrderedDict()  # Zachowuje kolejność dodawania
 MAX_CACHE_SIZE = 3  # Maksymalna liczba modeli w cache

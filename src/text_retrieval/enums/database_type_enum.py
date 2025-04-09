@@ -2,8 +2,8 @@ from enum import Enum
 from typing import Type, List, Dict
 
 from src.config import CHROMA_DB_FOLDER, LANCE_DB_FOLDER, SQLITE_FOLDER
-from src.enums.embedding_type_enum import EmbeddingType
-from src.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo, \
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from src.text_retrieval.models.vector_database_info import ChromaVectorDatabase, LanceVectorDatabase, VectorDatabaseInfo, \
     SqliteVectorDatabase
 
 

@@ -16,12 +16,12 @@ import pyarrow as pa
 import pandas as pd
 
 
-from src.enums.embedding_type_enum import EmbeddingType
-from src.enums.floating_precision_enum import FloatPrecisionPointEnum
-from src.enums.overlap_type import OverlapTypeEnum
-from src.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.chunk_metadata_model import ChunkMetadataModel
+from src.text_retrieval.enums.embedding_type_enum import EmbeddingType
+from src.text_retrieval.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.text_retrieval.enums.overlap_type import OverlapTypeEnum
+from src.text_retrieval.enums.text_segmentation_type_enum import TextSegmentationTypeEnum
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.models.chunk_metadata_model import ChunkMetadataModel
 
 
 class VectorDatabaseInfo:
@@ -101,7 +101,7 @@ class VectorDatabaseInfo:
 
     @classmethod
     def get_database_type(cls) -> "DatabaseType":
-        from src.enums.database_type_enum import DatabaseType
+        from src.text_retrieval.enums.database_type_enum import DatabaseType
         """Zwraca odpowiedni typ bazy danych na podstawie klasy."""
         for db_type in DatabaseType:
             if db_type.db_class == cls:
@@ -351,7 +351,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
 
         table = lance_db.create_table(database_name, data=df, schema=schema)
 
-        from src.enums.database_type_enum import DatabaseFeature
+        from src.text_retrieval.enums.database_type_enum import DatabaseFeature
         if DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value in self.features:
             if self.features[DatabaseFeature.LANCEDB_FULL_TEXT_SEARCH.value]['use_tantivy']:
                 table.create_fts_index(self.TEXT_COLUMN, use_tantivy=True, tokenizer_name="en_stem")
@@ -397,7 +397,7 @@ class LanceVectorDatabase(VectorDatabaseInfo):
         query_embedding = transformer_library.generate_embeddings(query_list, self)[
             0]  # TYLKO DENSE, ndarray o kształcie (num_queries, embedding_dim)
 
-        from src.enums.database_type_enum import DatabaseFeature
+        from src.text_retrieval.enums.database_type_enum import DatabaseFeature
 
         # Lista wyników dla każdego zapytania
         final_results = []

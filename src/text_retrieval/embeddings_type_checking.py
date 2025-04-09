@@ -2,10 +2,10 @@ from typing import Tuple, List, Optional
 
 import numpy as np
 
-from src.enums.floating_precision_enum import FloatPrecisionPointEnum
+from src.text_retrieval.enums.floating_precision_enum import FloatPrecisionPointEnum
 from transformers import AutoConfig
 
-from src.models.downloaded_embedding_model import DownloadedEmbeddingModel
+from src.text_retrieval.models.downloaded_embedding_model import DownloadedEmbeddingModel
 
 
 def embedding_types_checking(*,

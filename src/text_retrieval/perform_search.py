@@ -1,9 +1,9 @@
 import numpy as np
 from typing import List, Optional, Tuple
-from src.enums.database_type_enum import DatabaseType
-from src.enums.transformer_library_enum import TransformerLibrary
-from src.models.chunk_metadata_model import ChunkMetadataModel
-from src.models.vector_database_info import VectorDatabaseInfo
+from src.text_retrieval.enums.database_type_enum import DatabaseType
+from src.text_retrieval.enums.transformer_library_enum import TransformerLibrary
+from src.text_retrieval.models.chunk_metadata_model import ChunkMetadataModel
+from src.text_retrieval.models.vector_database_info import VectorDatabaseInfo
 
 
 def get_search_type(*, search_method: str):
