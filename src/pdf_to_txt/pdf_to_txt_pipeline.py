@@ -1,28 +1,34 @@
 import os
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import pymupdf
 
 from src.pdf_to_txt.string_ratio_scores import partial_ratio_score
 from src.pdf_to_txt.utils import clean_title, is_title_similar_to_excluded_titles, \
-    is_title_similar_to_excluded_structural_elements, has_numbering
+    is_title_similar_to_excluded_structural_elements
 
 
 @dataclass
 class ChapterInfo:
     title: str
-    start_page: int
-    end_page: int
-    valid: bool
+    start_page: Optional[int] = None
+    end_page: Optional[int] = None
+    toc: Optional[bool] = None
+    filtered_toc: Optional[bool] = None
 
 @dataclass
 class PdfFileInfo:
     file_path: str
     file_name: str
-    chapter_title_repeated_word: str
-    chapter_info: Dict[str, ChapterInfo]
-    valid: bool
+    start_page: Optional[int] = None
+    end_page: Optional[int] = None
+    filtered_start_page: Optional[int] = None
+    filtered_end_page: Optional[int] = None
+    chapter_title_repeated_word: Optional[str] = None
+    chapter_info: Optional[Dict[str, ChapterInfo]] = None
+    filtered_chapter_info: Optional[Dict[str, ChapterInfo]] = None
+    toc: Optional[bool] = None
 
 
 class PdfToTxtAnalysis:
@@ -41,97 +47,191 @@ class PdfToTxtAnalysis:
             doc: pymupdf.Document = pymupdf.open(file_path)
             toc = doc.get_toc()  # Pobiera spis treści
 
+            #text = "\n\n".join(page.get_text().strip() for page in doc)
+            #print(text)
+
+            #print(f'[0]: {doc[1].get_text()}')
+
             main_chapters = []
 
             if not toc:
                 print(f"❌ {file_name} - no toc!")
-                return "NIE MA TOC"
+                pdf_file_info[file_name] = PdfFileInfo(
+                    file_path=file_path,
+                    file_name=file_name,
+                    start_page=0,
+                    end_page=len(doc)
+                )
+                continue
             else:
-                # print(f"{file_name} All entries count: {len(toc)}")
-                # print(f"List of entries (Level 1):")
                 for entry in toc:
                     if entry[0] == 1:
                         print(f"📌 {entry}")
                         main_chapters.append(entry)
 
-            has_negative_start = any(start_page == -1 for _, _, start_page in main_chapters)
-            if not has_negative_start:
-                main_chapters.sort(key=lambda x: x[2])
-
-
-            total_pages = len(doc)
-            chapters_info: Dict[str, ChapterInfo] = {}
-
-            for i, (level, title, start_page) in enumerate(main_chapters):
-                title = clean_title(title)
-                end_page = None
-                if start_page == -1:
-                    start_page = None
-
-                if i + 1 < len(main_chapters):
-                    start_page_of_next_chapter = main_chapters[i + 1][2]
-
-                    end_page = main_chapters[i + 1][2]
-
-                    if start_page != start_page_of_next_chapter:
-                        end_page = start_page_of_next_chapter - 1
-                else:
-                    end_page = total_pages  # Ostatni rozdział trwa do końca dokumentu
-
-                chapter_info: ChapterInfo = ChapterInfo(
-                    title=title,
-                    start_page=start_page,
-                    end_page=end_page,
-                    valid=False
+    
+                total_pages = len(doc)
+                chapters_info: Dict[str, ChapterInfo] = {}
+    
+                for i, (level, title, start_page) in enumerate(main_chapters):
+                    title = clean_title(title)
+                    end_page = None
+                    if start_page == -1:
+                        start_page = None
+    
+                    if i + 1 < len(main_chapters):
+                        start_page_of_next_chapter = main_chapters[i + 1][2]
+    
+                        end_page = main_chapters[i + 1][2]
+    
+                        if start_page != start_page_of_next_chapter:
+                            if end_page == -1:
+                                end_page = None
+                            else:
+                                end_page = start_page_of_next_chapter - 1
+                    else:
+                        end_page = total_pages  # Ostatni rozdział trwa do końca dokumentu
+    
+                    chapter_info: ChapterInfo = ChapterInfo(
+                        title=title,
+                        start_page=start_page,
+                        end_page=end_page,
+                        toc=False
+                    )
+                    chapters_info[title] = chapter_info
+    
+    
+                filtered_chapters_info: Dict[str, ChapterInfo] = {}
+    
+                for chapter_title, chapter_info in chapters_info.items():
+    
+                    if partial_ratio_score(file_name, chapter_title) >= 0.8:
+                        # print(f'❌ {title}: Entry rejected - title similar to document name!')
+                        continue
+    
+                    if is_title_similar_to_excluded_titles(chapter_title, 0.95):
+                        # print(f'❌ {title}: Entry rejected - title similar to exclusion titles list!')
+                        continue
+    
+                    if is_title_similar_to_excluded_structural_elements(chapter_title):
+                        # print(f'❌ {title}: Entry rejected - title similar to excluded structural elements list!')
+                        continue
+    
+                    filtered_chapters_info[chapter_title] = chapter_info
+    
+    
+                pdf_file_info[file_name] = PdfFileInfo(
+                    file_path=file_path,
+                    file_name=file_name,
+                    chapter_title_repeated_word='',
+                    chapter_info=chapters_info,
+                    filtered_chapter_info=filtered_chapters_info,
+                    toc=False,
+                    start_page=0,
+                    end_page=len(doc)
                 )
-                chapters_info[title] = chapter_info
 
-            chapters_to_remove: List[str] = []
-            for chapter_title, chapter_info in chapters_info.items():
-                remove = False
-                if partial_ratio_score(file_name, chapter_title) >= 0.8:
-                    # print(f'❌ {title}: Entry rejected - title similar to document name!')
-                    remove = True
-
-                if is_title_similar_to_excluded_titles(chapter_title, 0.95):
-                    # print(f'❌ {title}: Entry rejected - title similar to exclusion titles list!')
-                    remove = True
-
-                if is_title_similar_to_excluded_structural_elements(chapter_title):
-                    # print(f'❌ {title}: Entry rejected - title similar to excluded structural elements list!')
-                    remove = True
-
-                if remove:
-                    chapters_to_remove.append(chapter_title)
-
-            for chapter_to_remove in chapters_to_remove:
-                del chapters_info[chapter_to_remove]
-
-            print('FILTERED CHAPTERS:')
-            for chapter in chapters_info:
-                print(chapter)
-
-
-            pdf_file_info[file_name] = PdfFileInfo(
-                file_path=file_path,
-                file_name=file_name,
-                chapter_title_repeated_word='',
-                chapter_info=chapters_info,
-                valid=False
-            )
-
-        print('CHAPTERS:')
-        for chapter_title, value in chapters_info.items():
-            print(value)
+            print('CHAPTERS:')
+            for chapter_title, value in chapters_info.items():
+                print(value)
         return pdf_file_info
 
-    # def validate_pdf_files(self, *, pdf_files_info: Dict[str, PdfFileInfo]):
-    #     valid_chapters = []
-    #     invalid_chapters = []
-    #     for file_name, pdf_file_info in pdf_files_info.items():
-    #         for chapter_name, chapter_info in pdf_file_info.chapter_info.items():
-    #             if chapter_info.start_page == -1 or chapter_info.end_page == -1:
-    #                 #invalid_chapters.append(chapter_info)
+    def validate_pdf_files(self, *, pdf_files_info: Dict[str, PdfFileInfo]) -> Dict[str, PdfFileInfo]:
+        for file_name, pdf_file_info in pdf_files_info.items():
+            if pdf_file_info.toc is not None: #tristate
+                # Walidujemy rozdziały w pliku PDF
+                updated_chapters = self.validate_chapters(chapters=pdf_file_info.chapter_info)
+                pdf_file_info.chapter_info = updated_chapters
 
+                # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
+                all_chapters_valid = all(chapter.toc for chapter in pdf_file_info.chapter_info.values())
+                pdf_file_info.toc = all_chapters_valid
 
+                updated_filtered_chapters = self.validate_chapters(chapters=pdf_file_info.filtered_chapter_info)
+                pdf_file_info.filtered_chapter_info = updated_filtered_chapters
 
+                # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
+                all_filtered_chapters_valid = all(chapter.toc for chapter in pdf_file_info.filtered_chapter_info.values())
+                pdf_file_info.filtered_toc = all_filtered_chapters_valid
+
+                if pdf_file_info.filtered_toc:
+                    pdf_file_info.filtered_start_page = list(pdf_files_info.values())[0].start_page
+                    pdf_file_info.filtered_start_page = list(pdf_files_info.values())[-1].end_page
+
+                # Raportowanie dla pliku PDF
+                print(f"\nPlik PDF '{file_name}':")
+                print(f"Valid: {pdf_file_info.toc}")
+                if not pdf_file_info.toc:
+                    print("Powód: Co najmniej jeden rozdział jest nieważny.")
+
+        return pdf_files_info
+
+    def validate_chapters(self, chapters: Dict[str, ChapterInfo]) -> Dict[str, ChapterInfo]:
+        chapters_list: List[ChapterInfo] = list(chapters.values())
+        if not chapters_list:
+            print("Brak rozdziałów do sprawdzenia.")
+            return chapters
+
+        # Rozdziały z pełnymi danymi
+        valid_chapters = [ch for ch in chapters_list if ch.start_page is not None and ch.end_page is not None]
+
+        # 1. Wstępna walidacja i zbieranie problemów
+        issues = {}
+        for chapter in chapters_list:
+            chapter.toc = True  # Zakładamy, że jest valid, dopóki nie znajdziemy problemu
+            if chapter.start_page is None or chapter.end_page is None:
+                chapter.toc = False
+                issues[
+                    chapter.title] = f"Strony niekompletne (start_page={chapter.start_page}, end_page={chapter.end_page})"
+            elif chapter.start_page > chapter.end_page:
+                chapter.toc = False
+                issues[
+                    chapter.title] = f"start_page ({chapter.start_page}) jest większe niż end_page ({chapter.end_page})"
+            elif chapter.start_page < 1:
+                chapter.toc = False
+                issues[chapter.title] = f"start_page ({chapter.start_page}) jest mniejsze niż 1"
+
+        # 2. Sprawdzanie niedozwolonego nakładania się
+        for i, chapter in enumerate(valid_chapters):
+            for j, other_chapter in enumerate(valid_chapters):
+                if i < j and chapter.toc and other_chapter.toc:
+                    if not (chapter.end_page < other_chapter.start_page or chapter.start_page > other_chapter.end_page):
+                        if not (
+                                chapter.end_page == other_chapter.start_page or other_chapter.end_page == chapter.start_page):
+                            chapter.toc = False
+                            other_chapter.toc = False
+                            issues[chapter.title] = issues.get(chapter.title,
+                                                               "") + f" Niedozwolone nakładanie się z '{other_chapter.title}' ({other_chapter.start_page}-{other_chapter.end_page})"
+                            issues[other_chapter.title] = issues.get(other_chapter.title,
+                                                                     "") + f" Niedozwolone nakładanie się z '{chapter.title}' ({chapter.start_page}-{chapter.end_page})"
+
+        # 3. Raportowanie wyników
+        print("Wyniki walidacji:")
+        for chapter in chapters_list:
+            if chapter.toc:
+                print(f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest VALID")
+            else:
+                print(
+                    f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest INVALID: {issues.get(chapter.title, 'Nieokreślony problem')}")
+
+        # 4. Podsumowanie
+        print(f"\nPodsumowanie:")
+        print(f"Liczba rozdziałów: {len(chapters_list)}")
+        print(f"Rozdziały z pełnymi danymi: {len(valid_chapters)}")
+        valid_count = sum(1 for ch in chapters_list if ch.toc)
+        print(f"Rozdziały valid: {valid_count}")
+        print(f"Rozdziały invalid: {len(chapters_list) - valid_count}")
+        if valid_chapters:
+            min_page = min(chapter.start_page for chapter in valid_chapters)
+            max_page = max(chapter.end_page for chapter in valid_chapters)
+            print(f"Minimalna strona: {min_page}")
+            print(f"Maksymalna strona: {max_page}")
+            print(f"Całkowita liczba stron (dla pełnych danych): {max_page - min_page + 1}")
+        else:
+            print("Brak rozdziałów z pełnymi danymi do analizy.")
+        print("Walidacja zakończona.")
+
+        # 5. Zwracamy słownik z zaktualizowanymi wartościami valid
+        return chapters
+
+    # Wywołanie funkcji
