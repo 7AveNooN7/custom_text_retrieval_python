@@ -1,4 +1,6 @@
+import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
@@ -35,89 +37,97 @@ class PdfToTxtAnalysis:
     def __init__(self, path_list: List[str]):
         self.path_list = path_list
 
+    async def prepare_pdf_information_async(self):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.prepare_pdf_information)
 
     def prepare_pdf_information(self):
-        pdf_file_info: Dict[str, PdfFileInfo] = {}
-        for file_path in self.path_list:
-            #print(f'iteration ')
-            file_name = os.path.basename(file_path)
-            doc: pymupdf.Document = pymupdf.open(file_path)
-            toc = doc.get_toc()  # Pobiera spis treści
+        pdf_files_info: Dict[str, PdfFileInfo] = {}
 
-            #text = "\n\n".join(page.get_text().strip() for page in doc)
-            #print(text)
+        # Zamiast ThreadPoolExecutor –> ProcessPoolExecutor
+        with ThreadPoolExecutor() as executor:
+            results = executor.map(self.process_single_pdf, self.path_list)
 
-            #print(f'[0]: {doc[1].get_text()}')
+        for result in results:
+            pdf_files_info[result.file_name] = result
 
-            main_chapters = []
+        return pdf_files_info
 
-            if not toc:
-                #print(f"❌ {file_name} - no toc!")
-                pdf_file_info[file_name] = PdfFileInfo(
-                    file_path=file_path,
-                    file_name=file_name,
-                    start_page=0,
-                    end_page=len(doc)
+
+    def process_single_pdf(self, file_path: str):
+        #print(f'iteration ')
+        file_name = os.path.basename(file_path)
+        doc: pymupdf.Document = pymupdf.open(file_path)
+        toc = doc.get_toc()  # Pobiera spis treści
+        #text = "\n\n".join(page.get_text().strip() for page in doc)
+        #print(text)
+        #print(f'[0]: {doc[1].get_text()}')
+        main_chapters = []
+        if not toc:
+            #print(f"❌ {file_name} - no toc!")
+            return PdfFileInfo(
+                file_path=file_path,
+                file_name=file_name,
+                start_page=0,
+                end_page=len(doc)
+            )
+        else:
+            for entry in toc:
+                if entry[0] == 1:
+                    #print(f"📌 {entry}")
+                    main_chapters.append(entry)
+
+            total_pages = len(doc)
+            chapters_info: Dict[str, ChapterInfo] = {}
+
+            for i, (level, title, start_page) in enumerate(main_chapters):
+                title = clean_title(title)
+                end_page = None
+                if start_page == -1:
+                    start_page = None
+
+                if i + 1 < len(main_chapters):
+                    start_page_of_next_chapter = main_chapters[i + 1][2]
+
+                    end_page = main_chapters[i + 1][2]
+
+                    if start_page != start_page_of_next_chapter:
+                        if end_page == -1:
+                            end_page = None
+                        else:
+                            end_page = start_page_of_next_chapter - 1
+                else:
+                    end_page = total_pages  # Ostatni rozdział trwa do końca dokumentu
+
+                chapter_info: ChapterInfo = ChapterInfo(
+                    title=title,
+                    start_page=start_page,
+                    end_page=end_page,
+                    toc=False
                 )
-                continue
-            else:
-                for entry in toc:
-                    if entry[0] == 1:
-                        #print(f"📌 {entry}")
-                        main_chapters.append(entry)
+                chapters_info[title] = chapter_info
 
-    
-                total_pages = len(doc)
-                chapters_info: Dict[str, ChapterInfo] = {}
-    
-                for i, (level, title, start_page) in enumerate(main_chapters):
-                    title = clean_title(title)
-                    end_page = None
-                    if start_page == -1:
-                        start_page = None
-    
-                    if i + 1 < len(main_chapters):
-                        start_page_of_next_chapter = main_chapters[i + 1][2]
-    
-                        end_page = main_chapters[i + 1][2]
-    
-                        if start_page != start_page_of_next_chapter:
-                            if end_page == -1:
-                                end_page = None
-                            else:
-                                end_page = start_page_of_next_chapter - 1
-                    else:
-                        end_page = total_pages  # Ostatni rozdział trwa do końca dokumentu
-    
-                    chapter_info: ChapterInfo = ChapterInfo(
-                        title=title,
-                        start_page=start_page,
-                        end_page=end_page,
-                        toc=False
-                    )
-                    chapters_info[title] = chapter_info
-    
-    
-                filtered_chapters_info: Dict[str, ChapterInfo] = {}
-    
-                for chapter_title, chapter_info in chapters_info.items():
-    
-                    if partial_ratio_score(file_name, chapter_title) >= 0.8:
-                        # print(f'❌ {title}: Entry rejected - title similar to document name!')
-                        continue
-    
-                    if is_title_similar_to_excluded_titles(chapter_title, 0.95):
-                        # print(f'❌ {title}: Entry rejected - title similar to exclusion titles list!')
-                        continue
-    
-                    if is_title_similar_to_excluded_structural_elements(chapter_title):
-                        # print(f'❌ {title}: Entry rejected - title similar to excluded structural elements list!')
-                        continue
-    
-                    filtered_chapters_info[chapter_title] = chapter_info
-    
-    
-                pdf_file_info[file_name] = PdfFileInfo(
+
+            filtered_chapters_info: Dict[str, ChapterInfo] = {}
+
+            for chapter_title, chapter_info in chapters_info.items():
+
+                if partial_ratio_score(file_name, chapter_title) >= 0.8:
+                    # print(f'❌ {title}: Entry rejected - title similar to document name!')
+                    continue
+
+                if is_title_similar_to_excluded_titles(chapter_title, 0.95):
+                    # print(f'❌ {title}: Entry rejected - title similar to exclusion titles list!')
+                    continue
+
+                if is_title_similar_to_excluded_structural_elements(chapter_title):
+                    # print(f'❌ {title}: Entry rejected - title similar to excluded structural elements list!')
+                    continue
+
+                filtered_chapters_info[chapter_title] = chapter_info
+
+            return self.validate_pdf_files(
+                pdf_file_info=PdfFileInfo(
                     file_path=file_path,
                     file_name=file_name,
                     chapter_title_repeated_word='',
@@ -127,41 +137,32 @@ class PdfToTxtAnalysis:
                     start_page=0,
                     end_page=len(doc)
                 )
+            )
 
-            # print('CHAPTERS:')
-            # for chapter_title, value in chapters_info.items():
-            #     print(value)
-        return self.validate_pdf_files(pdf_files_info=pdf_file_info)
 
-    def validate_pdf_files(self, *, pdf_files_info: Dict[str, PdfFileInfo]) -> Dict[str, PdfFileInfo]:
-        for file_name, pdf_file_info in pdf_files_info.items():
-            if pdf_file_info.toc is not None: #tristate
-                # Walidujemy rozdziały w pliku PDF
-                updated_chapters = self.validate_chapters(chapters=pdf_file_info.chapter_info)
-                pdf_file_info.chapter_info = updated_chapters
+    def validate_pdf_files(self, *, pdf_file_info: PdfFileInfo) -> PdfFileInfo:
+        if pdf_file_info.toc is not None:  # tristate
+            # Walidujemy rozdziały w pliku PDF
+            updated_chapters = self.validate_chapters(chapters=pdf_file_info.chapter_info)
+            pdf_file_info.chapter_info = updated_chapters
 
-                # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
-                all_chapters_valid = all(chapter.toc for chapter in pdf_file_info.chapter_info.values())
-                pdf_file_info.toc = all_chapters_valid
+            # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
+            all_chapters_valid = all(chapter.toc for chapter in pdf_file_info.chapter_info.values())
+            pdf_file_info.toc = all_chapters_valid
 
-                updated_filtered_chapters = self.validate_chapters(chapters=pdf_file_info.filtered_chapter_info)
-                pdf_file_info.filtered_chapter_info = updated_filtered_chapters
+            updated_filtered_chapters = self.validate_chapters(chapters=pdf_file_info.filtered_chapter_info)
+            pdf_file_info.filtered_chapter_info = updated_filtered_chapters
 
-                # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
-                all_filtered_chapters_valid = all(chapter.toc for chapter in pdf_file_info.filtered_chapter_info.values())
-                pdf_file_info.filtered_toc = all_filtered_chapters_valid
+            # Ustawiamy pole valid w PdfFileInfo na True, jeśli wszystkie rozdziały są valid
+            all_filtered_chapters_valid = all(chapter.toc for chapter in pdf_file_info.filtered_chapter_info.values())
+            pdf_file_info.filtered_toc = all_filtered_chapters_valid
 
-                if pdf_file_info.filtered_toc:
-                    pdf_file_info.filtered_start_page = list(pdf_files_info.values())[0].start_page
-                    pdf_file_info.filtered_start_page = list(pdf_files_info.values())[-1].end_page
+            if pdf_file_info.filtered_toc:
+                pdf_file_info.filtered_start_page = list(pdf_file_info.filtered_chapter_info.values())[0].start_page
+                pdf_file_info.filtered_start_page = list(pdf_file_info.filtered_chapter_info.values())[-1].end_page
 
-                # # Raportowanie dla pliku PDF
-                # print(f"\nPlik PDF '{file_name}':")
-                # print(f"Valid: {pdf_file_info.toc}")
-                # if not pdf_file_info.toc:
-                #     print("Powód: Co najmniej jeden rozdział jest nieważny.")
 
-        return pdf_files_info
+        return pdf_file_info
 
     def validate_chapters(self, chapters: Dict[str, ChapterInfo]) -> Dict[str, ChapterInfo]:
         chapters_list: List[ChapterInfo] = list(chapters.values())
