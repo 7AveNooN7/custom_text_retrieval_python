@@ -6,18 +6,17 @@ from src.pdf_to_txt.pdf_to_txt_pipeline import PdfToTxtAnalysis, PdfFileInfo
 
 def pdf_to_txt_tab():
     def process_1(file_uploader_files_paths):
+
+
         if file_uploader_files_paths:
             print(f'file_uploader_files: {file_uploader_files_paths}')
-
-
 
             pdf_to_txt_analysis = PdfToTxtAnalysis(
                 path_list=file_uploader_files_paths,
                 previous_path_list=[]
             )
 
-            pdf_files_info = pdf_to_txt_analysis.prepare_pdf_information()
-            pdf_files_info: Dict[str, PdfFileInfo] = pdf_to_txt_analysis.validate_pdf_files(pdf_files_info=pdf_files_info)
+            pdf_files_info: Dict[str, PdfFileInfo] = pdf_to_txt_analysis.prepare_pdf_information()
 
             return pdf_files_info
         else:

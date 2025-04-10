@@ -134,7 +134,7 @@ class PdfToTxtAnalysis:
             print('CHAPTERS:')
             for chapter_title, value in chapters_info.items():
                 print(value)
-        return pdf_file_info
+        return self.validate_pdf_files(pdf_files_info=pdf_file_info)
 
     def validate_pdf_files(self, *, pdf_files_info: Dict[str, PdfFileInfo]) -> Dict[str, PdfFileInfo]:
         for file_name, pdf_file_info in pdf_files_info.items():
