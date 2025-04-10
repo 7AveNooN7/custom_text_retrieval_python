@@ -15,7 +15,6 @@ class ChapterInfo:
     start_page: Optional[int] = None
     end_page: Optional[int] = None
     toc: Optional[bool] = None
-    filtered_toc: Optional[bool] = None
 
 @dataclass
 class PdfFileInfo:
@@ -29,20 +28,18 @@ class PdfFileInfo:
     chapter_info: Optional[Dict[str, ChapterInfo]] = None
     filtered_chapter_info: Optional[Dict[str, ChapterInfo]] = None
     toc: Optional[bool] = None
+    filtered_toc: Optional[bool] = None
 
 
 class PdfToTxtAnalysis:
-    def __init__(self, path_list: List[str], previous_path_list: List[str]):
+    def __init__(self, path_list: List[str]):
         self.path_list = path_list
-        self.previous_path_list = previous_path_list
-
-        self.files_paths_to_consider = [item for item in self.path_list if item not in self.previous_path_list]
 
 
     def prepare_pdf_information(self):
         pdf_file_info: Dict[str, PdfFileInfo] = {}
-        for file_path in self.files_paths_to_consider:
-            print(f'iteration ')
+        for file_path in self.path_list:
+            #print(f'iteration ')
             file_name = os.path.basename(file_path)
             doc: pymupdf.Document = pymupdf.open(file_path)
             toc = doc.get_toc()  # Pobiera spis treści
@@ -55,7 +52,7 @@ class PdfToTxtAnalysis:
             main_chapters = []
 
             if not toc:
-                print(f"❌ {file_name} - no toc!")
+                #print(f"❌ {file_name} - no toc!")
                 pdf_file_info[file_name] = PdfFileInfo(
                     file_path=file_path,
                     file_name=file_name,
@@ -66,7 +63,7 @@ class PdfToTxtAnalysis:
             else:
                 for entry in toc:
                     if entry[0] == 1:
-                        print(f"📌 {entry}")
+                        #print(f"📌 {entry}")
                         main_chapters.append(entry)
 
     
@@ -131,9 +128,9 @@ class PdfToTxtAnalysis:
                     end_page=len(doc)
                 )
 
-            print('CHAPTERS:')
-            for chapter_title, value in chapters_info.items():
-                print(value)
+            # print('CHAPTERS:')
+            # for chapter_title, value in chapters_info.items():
+            #     print(value)
         return self.validate_pdf_files(pdf_files_info=pdf_file_info)
 
     def validate_pdf_files(self, *, pdf_files_info: Dict[str, PdfFileInfo]) -> Dict[str, PdfFileInfo]:
@@ -158,18 +155,18 @@ class PdfToTxtAnalysis:
                     pdf_file_info.filtered_start_page = list(pdf_files_info.values())[0].start_page
                     pdf_file_info.filtered_start_page = list(pdf_files_info.values())[-1].end_page
 
-                # Raportowanie dla pliku PDF
-                print(f"\nPlik PDF '{file_name}':")
-                print(f"Valid: {pdf_file_info.toc}")
-                if not pdf_file_info.toc:
-                    print("Powód: Co najmniej jeden rozdział jest nieważny.")
+                # # Raportowanie dla pliku PDF
+                # print(f"\nPlik PDF '{file_name}':")
+                # print(f"Valid: {pdf_file_info.toc}")
+                # if not pdf_file_info.toc:
+                #     print("Powód: Co najmniej jeden rozdział jest nieważny.")
 
         return pdf_files_info
 
     def validate_chapters(self, chapters: Dict[str, ChapterInfo]) -> Dict[str, ChapterInfo]:
         chapters_list: List[ChapterInfo] = list(chapters.values())
         if not chapters_list:
-            print("Brak rozdziałów do sprawdzenia.")
+            #print("Brak rozdziałów do sprawdzenia.")
             return chapters
 
         # Rozdziały z pełnymi danymi
@@ -205,31 +202,31 @@ class PdfToTxtAnalysis:
                             issues[other_chapter.title] = issues.get(other_chapter.title,
                                                                      "") + f" Niedozwolone nakładanie się z '{chapter.title}' ({chapter.start_page}-{chapter.end_page})"
 
-        # 3. Raportowanie wyników
-        print("Wyniki walidacji:")
-        for chapter in chapters_list:
-            if chapter.toc:
-                print(f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest VALID")
-            else:
-                print(
-                    f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest INVALID: {issues.get(chapter.title, 'Nieokreślony problem')}")
-
-        # 4. Podsumowanie
-        print(f"\nPodsumowanie:")
-        print(f"Liczba rozdziałów: {len(chapters_list)}")
-        print(f"Rozdziały z pełnymi danymi: {len(valid_chapters)}")
-        valid_count = sum(1 for ch in chapters_list if ch.toc)
-        print(f"Rozdziały valid: {valid_count}")
-        print(f"Rozdziały invalid: {len(chapters_list) - valid_count}")
-        if valid_chapters:
-            min_page = min(chapter.start_page for chapter in valid_chapters)
-            max_page = max(chapter.end_page for chapter in valid_chapters)
-            print(f"Minimalna strona: {min_page}")
-            print(f"Maksymalna strona: {max_page}")
-            print(f"Całkowita liczba stron (dla pełnych danych): {max_page - min_page + 1}")
-        else:
-            print("Brak rozdziałów z pełnymi danymi do analizy.")
-        print("Walidacja zakończona.")
+        # # 3. Raportowanie wyników
+        # print("Wyniki walidacji:")
+        # for chapter in chapters_list:
+        #     if chapter.toc:
+        #         print(f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest VALID")
+        #     else:
+        #         print(
+        #             f"Rozdział '{chapter.title}' ({chapter.start_page}-{chapter.end_page}) jest INVALID: {issues.get(chapter.title, 'Nieokreślony problem')}")
+        #
+        # #4. Podsumowanie
+        # print(f"\nPodsumowanie:")
+        # print(f"Liczba rozdziałów: {len(chapters_list)}")
+        # print(f"Rozdziały z pełnymi danymi: {len(valid_chapters)}")
+        # valid_count = sum(1 for ch in chapters_list if ch.toc)
+        # print(f"Rozdziały valid: {valid_count}")
+        # print(f"Rozdziały invalid: {len(chapters_list) - valid_count}")
+        # if valid_chapters:
+        #     min_page = min(chapter.start_page for chapter in valid_chapters)
+        #     max_page = max(chapter.end_page for chapter in valid_chapters)
+        #     print(f"Minimalna strona: {min_page}")
+        #     print(f"Maksymalna strona: {max_page}")
+        #     print(f"Całkowita liczba stron (dla pełnych danych): {max_page - min_page + 1}")
+        # else:
+        #     print("Brak rozdziałów z pełnymi danymi do analizy.")
+        # print("Walidacja zakończona.")
 
         # 5. Zwracamy słownik z zaktualizowanymi wartościami valid
         return chapters
