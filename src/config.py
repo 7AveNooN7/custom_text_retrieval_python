@@ -48,3 +48,5 @@ EXCLUDED_STRUCTURAL_ELEMENTS = ["Figure", "Table"]
 
 # keep the concurrency at the client (number of simultaneous calls) at the same level as the concurrency parameter at server side,
 # for instance if the server has 16 threads, use a concurrency of 8 and the client concurrency at 8 (it's the option n in the clients)
+
+GROBID_URL = "http://127.0.0.1:8070"

@@ -3,9 +3,10 @@ import os
 from typing import Dict
 
 import gradio as gr
-
+import copy
+from src.pdf_to_txt.convert_files import ConvertFiles
 from src.pdf_to_txt.models.file_settings_model import FileSettingsModel, ConversionMethodEnum
-from src.pdf_to_txt.pdf_to_txt_pipeline import PdfToTxtAnalysis, PdfFileInfo
+from src.pdf_to_txt.pdf_file_info import PdfToTxtAnalysis, PdfFileInfo
 
 
 def pdf_to_txt_tab():
@@ -77,7 +78,7 @@ def pdf_to_txt_tab():
             for file_name in difference:
                 new_files_dict[file_name] = FileSettingsModel(
                     conversion_method=ConversionMethodEnum.SIMPLE,
-                    use_filter=True
+                    use_filter=False
                 )
 
             return {**files_settings_state_arg, **new_files_dict}
@@ -104,11 +105,13 @@ def pdf_to_txt_tab():
         with gr.Row(
             equal_height=True
         ):
-            file_uploader = gr.Files(
-                label="📤 Choose`.pdf` files to process",
-                file_types=[".pdf"],
-                scale=1
-            )
+            with gr.Column():
+                file_uploader = gr.Files(
+                    label="📤 Choose`.pdf` files to process",
+                    file_types=[".pdf"],
+                    scale=1
+                )
+                database_text = gr.Text(label="Nazwa folderu:")
 
 
             file_uploader.change(
@@ -180,19 +183,24 @@ def pdf_to_txt_tab():
                                     gr.HTML(value=processing_html)
 
 
-        convert_button = gr.Button(value='Konwertuj')
+        with gr.Row():
+            convert_button = gr.Button(value='Konwertuj')
 
-        def test_2(files_state_arg, files_settings_state_arg):
-            print(files_settings_state_arg)
 
+
+        def test_2(files_state_arg, files_settings_state_arg, database_folder_name: str):
+            convert_files = ConvertFiles(
+                files_state=copy.deepcopy(files_state_arg),
+                files_settings_state=copy.deepcopy(files_settings_state_arg),
+                database_folder_name=database_folder_name
+            )
+            convert_files.start_converting_files()
 
         convert_button.click(
             fn=test_2,
-            inputs=[files_state, files_settings_state],
+            inputs=[files_state, files_settings_state, database_text],
             outputs=[]
         )
-
-
 
 
 processing_html = """

@@ -29,6 +29,7 @@ class PdfFileInfo:
     chapter_title_repeated_word: Optional[str] = None
     chapter_info: Optional[Dict[str, ChapterInfo]] = None
     filtered_chapter_info: Optional[Dict[str, ChapterInfo]] = None
+    synthetic_chapter_info: Optional[Dict[str, ChapterInfo]] = None
     toc: Optional[bool] = None
     filtered_toc: Optional[bool] = None
 
@@ -126,6 +127,9 @@ class PdfToTxtAnalysis:
 
                 filtered_chapters_info[chapter_title] = chapter_info
 
+
+
+            doc.close()
             return self.validate_pdf_files(
                 pdf_file_info=PdfFileInfo(
                     file_path=file_path,
@@ -133,12 +137,29 @@ class PdfToTxtAnalysis:
                     chapter_title_repeated_word='',
                     chapter_info=chapters_info,
                     filtered_chapter_info=filtered_chapters_info,
+                    synthetic_chapter_info=self.create_synthetic_chapters(0, total_pages),
                     toc=False,
                     start_page=0,
-                    end_page=len(doc)
+                    end_page=total_pages
                 )
             )
 
+    def create_synthetic_chapters(self, start_page: int, end_page: int) -> Dict[str, ChapterInfo]:
+        divide_by: int = 30
+        new_chapter_info_dict: Dict[str, ChapterInfo] = {}
+        i = 0
+        for start in range(1, end_page + 1, divide_by):
+            # Upewniamy się, żeby 'end' nie przekroczył end_page
+            end = min(start + divide_by - 1, end_page)
+
+            new_chapter_info_dict[str(i)] = ChapterInfo(
+                title=str(i),
+                start_page=start,
+                end_page=end
+            )
+            i = i+1
+
+        return new_chapter_info_dict
 
     def validate_pdf_files(self, *, pdf_file_info: PdfFileInfo) -> PdfFileInfo:
         if pdf_file_info.toc is not None:  # tristate
@@ -160,7 +181,6 @@ class PdfToTxtAnalysis:
             if pdf_file_info.filtered_toc:
                 pdf_file_info.filtered_start_page = list(pdf_file_info.filtered_chapter_info.values())[0].start_page
                 pdf_file_info.filtered_start_page = list(pdf_file_info.filtered_chapter_info.values())[-1].end_page
-
 
         return pdf_file_info
 
