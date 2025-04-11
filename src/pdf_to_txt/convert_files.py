@@ -1,8 +1,7 @@
 import os
 import requests
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from pathlib import Path
-from multiprocessing import Pool
 from typing import Dict, Tuple
 from datetime import datetime
 from pymupdf import pymupdf
@@ -13,10 +12,11 @@ from src.pdf_to_txt.pdf_file_info import PdfFileInfo
 
 
 class ConvertFiles:
-    def __init__(self, files_state: Dict[str, PdfFileInfo], files_settings_state: Dict[str, FileSettingsModel], database_folder_name: str):
+    def __init__(self, files_state: Dict[str, PdfFileInfo], files_settings_state: Dict[str, FileSettingsModel], database_folder_name: str, grobid_semaphore):
         self.files_state: Dict[str, PdfFileInfo] = files_state
         self.files_settings_state: Dict[str, FileSettingsModel] = files_settings_state
         self.database_folder_name: str = database_folder_name
+        self.grobid_semaphore = grobid_semaphore
 
     def create_text_folder_path(self):
         now = datetime.now()
@@ -39,15 +39,21 @@ class ConvertFiles:
     def start_converting_files(self):
         txt_folder_path = self.create_text_folder_path()
 
-        # Prepare arguments for each file to be processed
-        tasks = [
-            (file_name, file_value, self.files_settings_state[file_name], txt_folder_path)
-            for file_name, file_value in self.files_state.items()
-        ]
+        if len(list(self.files_state.keys())) == 1:
+            for file_name, file_value in self.files_state.items():
+                self._convert_single_file((file_name, file_value, self.files_settings_state[file_name], txt_folder_path))
+        else:
+            # Prepare arguments for each file to be processed
+            tasks = [
+                (file_name, file_value, self.files_settings_state[file_name], txt_folder_path)
+                for file_name, file_value in self.files_state.items()
+            ]
 
-        # Use multiprocessing Pool to process files in parallel
-        with Pool() as pool:
-            pool.map(self._convert_single_file, tasks)
+            max_workers = min(os.cpu_count(), len(tasks))
+
+            # Use multiprocessing Pool to process files in parallel
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = executor.map(self._convert_single_file, tasks)
 
     def _convert_single_file(self, args: Tuple[str, PdfFileInfo, FileSettingsModel, str]) -> None:
         """
@@ -101,29 +107,35 @@ class ConvertFiles:
         os.makedirs(current_file_folder_path)
 
         # tworzy podzielone .pdf dla grobid do przetowrzenia
-        self.create_split_pdf_files(file=file, file_settings=file_settings, folder_path=current_file_folder_path)
+        self.create_split_pdf_files(file=file, file_settings=file_settings, current_file_folder_path=current_file_folder_path)
 
         self.process_files_with_grobid(current_file_folder_path=current_file_folder_path)
 
 
-    def create_split_pdf_files(self, file: PdfFileInfo, file_settings: FileSettingsModel, folder_path: str) -> None:
+    def create_split_pdf_files(self, file: PdfFileInfo, file_settings: FileSettingsModel, current_file_folder_path: str) -> None:
         doc: pymupdf.Document = pymupdf.open(file.file_path)
 
-        chapters_to_iterate_for = file.chapter_info if (file_settings.use_filter and file.filtered_toc) else file.filtered_chapter_info
+        chapters_to_iterate_for = file.filtered_chapter_info if (file_settings.use_filter and file.filtered_toc) else file.chapter_info
+        if chapters_to_iterate_for is None:
+            chapters_to_iterate_for = file.synthetic_chapter_info
 
+        i = 0
         for chapter_name, chapter_info_value in chapters_to_iterate_for.items():
             new_doc = pymupdf.open()
             new_doc.insert_pdf(doc, from_page=chapter_info_value.start_page - 1,
                                to_page=chapter_info_value.end_page - 1)
-            new_doc.save(os.path.join(folder_path, f"{file.file_name.replace(" ", "_")}_{chapter_name.replace(" ", "_")}.pdf"))
+            new_pdf_file_name = f"{str(i)}.pdf"
+            new_doc.save(os.path.join(current_file_folder_path, new_pdf_file_name))
             new_doc.close()
+            i = i+1
 
 
     def process_files_with_grobid(self, current_file_folder_path: str):
         # lista wszystkich pelnych sciezek plikow .pdf
         pdf_files = [os.path.join(current_file_folder_path, f) for f in os.listdir(current_file_folder_path) if f.endswith(".pdf")]
 
-        with ThreadPoolExecutor() as executor:
+        # TODO: jest problem bo tutaj musze rozdzielic jakos dobrze pule bo grobid ustawiony jest na 16 a mam wiele plikow
+        with ThreadPoolExecutor(max_workers=4) as executor:
             # Tworzymy przyszłe zadania dla każdego pliku PDF
             futures = {executor.submit(self.process_with_grobid, pdf, current_file_folder_path): pdf for pdf in pdf_files}
 
@@ -144,18 +156,19 @@ class ConvertFiles:
                 "includeRawCopyrights": "0",
                 # "teiCoordinates": "p",
                 "teiCoordinates": "formula",
-                "segmentSentences": "1"
+                "segmentSentences": "0"
             }
 
             request_url = GROBID_URL + '/api/processFulltextDocument'
 
-            try:
-                response = requests.post(request_url, files=files, data=data)
-                response.raise_for_status()
-            except requests.RequestException as e:
-                print(f"❌ Błąd przetwarzania {pdf_full_path}: {e}")
-                return
+            with self.grobid_semaphore:
+                try:
+                    response = requests.post(request_url, files=files, data=data)
+                    response.raise_for_status()
+                except requests.RequestException as e:
+                    print(f"❌ Błąd przetwarzania {pdf_full_path}: {e}")
+                    return
 
-            with open(xml_output_path, "wb") as xml_file:
-                xml_file.write(response.content)
+                with open(xml_output_path, "wb") as xml_file:
+                    xml_file.write(response.content)
 

@@ -1,5 +1,6 @@
 import asyncio
 import os
+from multiprocessing import Manager
 from typing import Dict
 
 import gradio as gr
@@ -189,10 +190,13 @@ def pdf_to_txt_tab():
 
 
         def test_2(files_state_arg, files_settings_state_arg, database_folder_name: str):
+            manager = Manager()
+            grobid_semaphore = manager.Semaphore(8)
             convert_files = ConvertFiles(
                 files_state=copy.deepcopy(files_state_arg),
                 files_settings_state=copy.deepcopy(files_settings_state_arg),
-                database_folder_name=database_folder_name
+                database_folder_name=database_folder_name,
+                grobid_semaphore=grobid_semaphore
             )
             convert_files.start_converting_files()
 

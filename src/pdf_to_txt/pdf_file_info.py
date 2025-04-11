@@ -60,6 +60,7 @@ class PdfToTxtAnalysis:
         file_name = os.path.basename(file_path)
         doc: pymupdf.Document = pymupdf.open(file_path)
         toc = doc.get_toc()  # Pobiera spis treści
+        total_pages = len(doc)
         #text = "\n\n".join(page.get_text().strip() for page in doc)
         #print(text)
         #print(f'[0]: {doc[1].get_text()}')
@@ -70,15 +71,14 @@ class PdfToTxtAnalysis:
                 file_path=file_path,
                 file_name=file_name,
                 start_page=0,
-                end_page=len(doc)
+                end_page=len(doc),
+                synthetic_chapter_info=self.create_synthetic_chapters(0, total_pages),
             )
         else:
             for entry in toc:
                 if entry[0] == 1:
                     #print(f"📌 {entry}")
                     main_chapters.append(entry)
-
-            total_pages = len(doc)
             chapters_info: Dict[str, ChapterInfo] = {}
 
             for i, (level, title, start_page) in enumerate(main_chapters):
