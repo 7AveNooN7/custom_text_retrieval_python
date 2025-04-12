@@ -50,12 +50,14 @@ class ConvertFiles:
             ]
 
             max_workers = min(os.cpu_count(), len(tasks))
+            print(f'max_workers: {max_workers}')
 
             # Use multiprocessing Pool to process files in parallel
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 results = executor.map(self._convert_single_file, tasks)
 
     def _convert_single_file(self, args: Tuple[str, PdfFileInfo, FileSettingsModel, str]) -> None:
+        print(f'convert single file')
         """
         Worker function to convert a single file. This will run in a separate process.
 
@@ -156,7 +158,7 @@ class ConvertFiles:
                 "includeRawCopyrights": "0",
                 # "teiCoordinates": "p",
                 "teiCoordinates": "formula",
-                "segmentSentences": "0"
+                "segmentSentences": "0" # do segment_senteces wymagane jest wykrycie jezyka a sie to wykrzacza
             }
 
             request_url = GROBID_URL + '/api/processFulltextDocument'
