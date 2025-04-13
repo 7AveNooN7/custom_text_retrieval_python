@@ -9,6 +9,7 @@ from pymupdf import pymupdf
 from src.config import TXT_FOLDER, GROBID_URL
 from src.pdf_to_txt.models.file_settings_model import FileSettingsModel, ConversionMethodEnum
 from src.pdf_to_txt.pdf_file_info import PdfFileInfo
+from src.ui.tabs.create_database_tab import get_waiting_css_with_custom_text, get_css_text
 
 
 class ConvertFiles:
@@ -38,10 +39,11 @@ class ConvertFiles:
 
     def start_converting_files(self):
         txt_folder_path = self.create_text_folder_path()
-
+        yield get_waiting_css_with_custom_text(text=f"Processing .pdf files (0/{len(list(self.files_state.keys()))})...")
         if len(list(self.files_state.keys())) == 1:
             for file_name, file_value in self.files_state.items():
                 self._convert_single_file((file_name, file_value, self.files_settings_state[file_name], txt_folder_path))
+
         else:
             # Prepare arguments for each file to be processed
             tasks = [
@@ -55,9 +57,14 @@ class ConvertFiles:
             # Use multiprocessing Pool to process files in parallel
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 results = executor.map(self._convert_single_file, tasks)
+                for i, _ in enumerate(results, start=1):
+                    print(f'Plik zrobiony i: {i}')
+                    yield get_waiting_css_with_custom_text(text=f"Processing .pdf files ({i}/{len(tasks)})...")
+
+        yield get_css_text(text="Done")
 
     def _convert_single_file(self, args: Tuple[str, PdfFileInfo, FileSettingsModel, str]) -> None:
-        print(f'convert single file')
+        print(f'_convert_single_file')
         """
         Worker function to convert a single file. This will run in a separate process.
 
@@ -105,12 +112,14 @@ class ConvertFiles:
         #     print(f'{chapter_name}: {chapter_value.start_page} - {chapter_value.end_page}')
 
         # Tworzy folder do przechowywania podzielonycn pdf i txt dla aktualnie przetwarzanego pliku .pdf
+        print(f'grobid_method')
         current_file_folder_path = os.path.join(folder_path, Path(file.file_name).stem.replace(" ", "_"))
         os.makedirs(current_file_folder_path)
 
         # tworzy podzielone .pdf dla grobid do przetowrzenia
         self.create_split_pdf_files(file=file, file_settings=file_settings, current_file_folder_path=current_file_folder_path)
 
+        # tworzy xml'e z podzielonych .pdf
         self.process_files_with_grobid(current_file_folder_path=current_file_folder_path)
 
 
@@ -136,11 +145,10 @@ class ConvertFiles:
         # lista wszystkich pelnych sciezek plikow .pdf
         pdf_files = [os.path.join(current_file_folder_path, f) for f in os.listdir(current_file_folder_path) if f.endswith(".pdf")]
 
-        # TODO: jest problem bo tutaj musze rozdzielic jakos dobrze pule bo grobid ustawiony jest na 16 a mam wiele plikow
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        # Semaphore blokuje i tak do 8
+        with ThreadPoolExecutor() as executor:
             # Tworzymy przyszłe zadania dla każdego pliku PDF
             futures = {executor.submit(self.process_with_grobid, pdf, current_file_folder_path): pdf for pdf in pdf_files}
-
 
     def process_with_grobid(self, pdf_full_path: str, current_file_folder_path: str):
         xml_file_name = Path(pdf_full_path).stem + ".xml"
