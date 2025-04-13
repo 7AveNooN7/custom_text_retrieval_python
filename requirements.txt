@@ -20,3 +20,5 @@ overrides
 transformers
 PyMuPDF
 pytest
+requests
+lxml

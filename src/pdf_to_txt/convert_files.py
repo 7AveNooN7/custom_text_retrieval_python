@@ -1,14 +1,18 @@
+import concurrent
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
+from lxml import etree
+
 import requests
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from datetime import datetime
 from pymupdf import pymupdf
 
 from src.config import TXT_FOLDER, GROBID_URL
 from src.pdf_to_txt.models.file_settings_model import FileSettingsModel, ConversionMethodEnum
-from src.pdf_to_txt.pdf_file_info import PdfFileInfo
+from src.pdf_to_txt.pdf_file_info import PdfFileInfo, ChapterInfo
 from src.ui.tabs.create_database_tab import get_waiting_css_with_custom_text, get_css_text
 
 
@@ -58,7 +62,6 @@ class ConvertFiles:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 results = executor.map(self._convert_single_file, tasks)
                 for i, _ in enumerate(results, start=1):
-                    print(f'Plik zrobiony i: {i}')
                     yield get_waiting_css_with_custom_text(text=f"Processing .pdf files ({i}/{len(tasks)})...")
 
         yield get_css_text(text="Done")
@@ -117,43 +120,68 @@ class ConvertFiles:
         os.makedirs(current_file_folder_path)
 
         # tworzy podzielone .pdf dla grobid do przetowrzenia
-        self.create_split_pdf_files(file=file, file_settings=file_settings, current_file_folder_path=current_file_folder_path)
+        new_pdf_paths = self.create_split_pdf_files(file=file, file_settings=file_settings, current_file_folder_path=current_file_folder_path)
+
+        for new_pdf in new_pdf_paths:
+            print(f'{new_pdf}')
 
         # tworzy xml'e z podzielonych .pdf
-        self.process_files_with_grobid(current_file_folder_path=current_file_folder_path)
+        self.process_files_with_grobid(new_pdf_paths=new_pdf_paths)
 
-
-    def create_split_pdf_files(self, file: PdfFileInfo, file_settings: FileSettingsModel, current_file_folder_path: str) -> None:
+    def create_split_pdf_files(self, file: PdfFileInfo, file_settings: FileSettingsModel,
+                               current_file_folder_path: str) -> List[str]:
         doc: pymupdf.Document = pymupdf.open(file.file_path)
 
-        chapters_to_iterate_for = file.filtered_chapter_info if (file_settings.use_filter and file.filtered_toc) else file.chapter_info
+        chapters_to_iterate_for = file.filtered_chapter_info if (
+                    file_settings.use_filter and file.filtered_toc) else file.chapter_info
         if chapters_to_iterate_for is None:
             chapters_to_iterate_for = file.synthetic_chapter_info
 
-        i = 0
-        for chapter_name, chapter_info_value in chapters_to_iterate_for.items():
+        def process_chapter(chapter_data: ChapterInfo):
+            print(f'chapterInfo: {chapter_data}')
+            reserve_name, chapter_info_value = chapter_data
+            chapter_info_value = chapter_info_value[1]
             new_doc = pymupdf.open()
             new_doc.insert_pdf(doc, from_page=chapter_info_value.start_page - 1,
                                to_page=chapter_info_value.end_page - 1)
-            new_pdf_file_name = f"{str(i)}.pdf"
-            new_doc.save(os.path.join(current_file_folder_path, new_pdf_file_name))
+
+            new_pdf_file_name = self.make_valid_filename(filename=chapter_info_value.title,
+                                                         name_replacement=str(reserve_name)) + ".pdf"
+
+            new_pdf_path = os.path.join(current_file_folder_path, new_pdf_file_name)
+            new_doc.save(new_pdf_path)
             new_doc.close()
-            i = i+1
+            return new_pdf_path
+
+        with ThreadPoolExecutor() as executor:
+            # Mapujemy procesowanie rozdziałów na pulę wątków
+            new_pdf_paths = list(executor.map(process_chapter, enumerate(chapters_to_iterate_for.items())))
+
+        doc.close()
+        return new_pdf_paths
 
 
-    def process_files_with_grobid(self, current_file_folder_path: str):
+    def process_files_with_grobid(self, new_pdf_paths: List[str]):
         # lista wszystkich pelnych sciezek plikow .pdf
-        pdf_files = [os.path.join(current_file_folder_path, f) for f in os.listdir(current_file_folder_path) if f.endswith(".pdf")]
 
         # Semaphore blokuje i tak do 8
         with ThreadPoolExecutor() as executor:
             # Tworzymy przyszłe zadania dla każdego pliku PDF
-            futures = {executor.submit(self.process_with_grobid, pdf, current_file_folder_path): pdf for pdf in pdf_files}
+            futures = {
+                executor.submit(self.process_with_grobid, pdf): pdf
+                for pdf in new_pdf_paths
+            }
 
-    def process_with_grobid(self, pdf_full_path: str, current_file_folder_path: str):
-        xml_file_name = Path(pdf_full_path).stem + ".xml"
-        xml_output_path = os.path.join(current_file_folder_path, xml_file_name)
+            for future in as_completed(futures):
+                pdf_path = futures[future]
+                try:
+                    final_string = future.result()
+                    print(f"Otrzymano wynik dla pliku {pdf_path}")
+                except Exception as exc:
+                    print(f"Błąd dla pliku {pdf_path}: {exc}")
 
+    def process_with_grobid(self, pdf_full_path: str) -> str:
+        xml_output_path = pdf_full_path.replace(".pdf", ".xml")
         with open(pdf_full_path, "rb") as pdf:
             files = {"input": pdf}
 
@@ -181,4 +209,129 @@ class ConvertFiles:
 
                 with open(xml_output_path, "wb") as xml_file:
                     xml_file.write(response.content)
+                    xml_string = response.content
+                    final_text = self.parse_grobid_xml_to_txt(xml_string, pdf_full_path)
+                    return final_text
 
+    def parse_grobid_xml_to_txt(self, xml_string: str, pdf_full_path: str) -> str:
+        """
+        Ekstrahuje tekst wyłącznie z <p> wewnątrz <div> w sekcji <body> XML TEI, ignorując inne elementy.
+        Łączy kolejne <p> dodając pojedynczą spację między nimi.
+        Uwzględnia brak segmentacji zdań (brak znaczników <s>).
+        """
+        text_output_path = pdf_full_path.replace(".pdf", ".txt")
+
+        parser = etree.XMLParser(remove_blank_text=True)
+        try:
+            tree = etree.fromstring(xml_string, parser)
+        except etree.XMLSyntaxError:
+            print("Błąd parsowania XML.")
+            return ""
+
+        namespaces = {'tei': 'http://www.tei-c.org/ns/1.0'}
+
+        body = tree.find('.//tei:body', namespaces=namespaces)
+        if body is None:
+            print("Brak sekcji <body> w podanym XML.")
+            return ""
+
+        extracted_text = []
+
+        for div in body.findall('./tei:div', namespaces=namespaces):
+            paragraph_texts = []
+
+            for p in div.findall('.//tei:p', namespaces=namespaces):
+                # Pobieramy cały tekst z akapitu
+                paragraph_text = " ".join(p.itertext()).strip()
+
+                # Sprawdzamy, czy tekst akapitu jest niepusty
+                if paragraph_text:
+                    # Opcjonalnie: możemy sprawdzić, czy tekst spełnia jakieś kryteria (np. wielka litera na początku)
+                    #if re.match(r"^[A-ZĄĆĘŁŃÓŚŹŻ]", paragraph_text):
+                    paragraph_texts.append(paragraph_text)
+
+            if paragraph_texts:
+                extracted_text.append(" ".join(paragraph_texts))
+
+        extracted_text = "\n".join(extracted_text)
+        with open(text_output_path, "w", encoding="utf-8") as text_file:
+            text_file.write(extracted_text)
+
+        return extracted_text
+
+    def make_valid_filename(self, filename: str, name_replacement: str, os_type: str = "windows", replacement: str = "_") -> str:
+        """
+        Przyjmuje nazwę pliku i zwraca poprawną nazwę zgodną z wymaganiami systemu operacyjnego.
+        Usuwa niedozwolone znaki, skraca nazwę, jeśli jest za długa, i unika zarezerwowanych nazw.
+
+        Args:
+            filename (str): Nazwa pliku do poprawienia.
+            os_type (str): System operacyjny ("windows" lub "posix" dla Linux/macOS).
+            replacement (str): Znak zastępujący niedozwolone znaki (domyślnie "_").
+
+        Returns:
+            str: Poprawna nazwa pliku.
+        """
+        if not filename or filename.isspace():
+            return "default_filename"
+
+        # Usuwamy białe znaki na początku i końcu
+        filename = filename.strip()
+
+        # Zamiana spacji na replacement (np. '_')
+        filename = filename.replace(" ", replacement)
+
+        # Maksymalna długość nazwy pliku
+        max_length = 255
+
+        if os_type.lower() == "windows":
+            # Zarezerwowane nazwy w Windows
+            reserved_names = {
+                "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4",
+                "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3",
+                "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+            }
+
+            # Sprawdzenie zarezerwowanych nazw
+            base_name = filename.split(".")[0].upper()
+            if base_name in reserved_names:
+                filename = f"_{filename}"
+
+            # Zastępujemy niedozwolone znaki: < > : " / \ | ? *
+            invalid_chars = r'[<>:"/\\|?*]'
+            filename = re.sub(invalid_chars, replacement, filename)
+
+            # Usuwamy kropki na początku lub końcu
+            filename = filename.strip(".")
+
+        else:  # POSIX (Linux, macOS)
+            # Zastępujemy niedozwolone znaki: / i null byte
+            filename = filename.replace("/", replacement).replace("\0", "")
+
+        # Zastępujemy wielokrotne spacje pojedynczą spacją
+        filename = re.sub(r"\s+", " ", filename)
+
+        # Skracamy nazwę, jeśli jest za długa (uwzględniając kodowanie UTF-8)
+        encoded = filename.encode('utf-8')
+        if len(encoded) > max_length:
+            # Zachowujemy rozszerzenie, jeśli istnieje
+            base, ext = (filename.rsplit(".", 1) if "." in filename else (filename, ""))
+            # Obliczamy maksymalną długość bazowej nazwy
+            ext_len = len(ext.encode('utf-8')) + (1 if ext else 0)  # +1 dla kropki
+            max_base_len = max_length - ext_len
+            # Skracamy nazwę bazową
+            while len(base.encode('utf-8')) > max_base_len and base:
+                base = base[:-1]
+            filename = f"{base}.{ext}" if ext else base
+
+        # Jeśli nazwa nadal jest pusta, zwracamy domyślną
+        if not filename:
+            return name_replacement
+
+        # Ostateczne sprawdzenie poprawności
+        try:
+            test = Path(filename).name
+            return filename
+        except (ValueError, OSError):
+            # W razie problemów zwracamy nazwę z dodatkowym prefiksem
+            return f"corrected_{filename}"
