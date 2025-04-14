@@ -1,4 +1,3 @@
-import concurrent
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
@@ -166,13 +165,9 @@ class ConvertFiles:
     def process_files_with_grobid(self, new_pdf_paths: List[str]):
         # slownik do przechowywania stringow
         final_strings_dict: Dict[str, str] = {path: "" for path in new_pdf_paths}
-        print('EMPTY: ')
-        for key, value in final_strings_dict.items():
-            print(f'{Path(key).stem}')
 
         # Semaphore blokuje i tak do 8
         with ThreadPoolExecutor() as executor:
-            # Tworzymy przyszłe zadania dla każdego pliku PDF
             futures = {
                 executor.submit(self.process_with_grobid, pdf): pdf
                 for pdf in new_pdf_paths
@@ -222,11 +217,56 @@ class ConvertFiles:
                     final_text = self.parse_grobid_xml_to_txt(xml_string, pdf_full_path)
                     return final_text
 
+    # def parse_grobid_xml_to_txt(self, xml_string: str, pdf_full_path: str) -> str:
+    #     """
+    #     Ekstrahuje tekst wyłącznie z <p> wewnątrz <div> w sekcji <body> XML TEI, ignorując inne elementy.
+    #     Łączy kolejne <p> dodając pojedynczą spację między nimi.
+    #     Uwzględnia brak segmentacji zdań (brak znaczników <s>).
+    #     """
+    #     text_output_path = pdf_full_path.replace(".pdf", ".txt")
+    #
+    #     parser = etree.XMLParser(remove_blank_text=True)
+    #     try:
+    #         tree = etree.fromstring(xml_string, parser)
+    #     except etree.XMLSyntaxError:
+    #         print("Błąd parsowania XML.")
+    #         return ""
+    #
+    #     namespaces = {'tei': 'http://www.tei-c.org/ns/1.0'}
+    #
+    #     body = tree.find('.//tei:body', namespaces=namespaces)
+    #     if body is None:
+    #         print("Brak sekcji <body> w podanym XML.")
+    #         return ""
+    #
+    #     extracted_text = []
+    #
+    #     for div in body.findall('./tei:div', namespaces=namespaces):
+    #         paragraph_texts = []
+    #
+    #         for p in div.findall('.//tei:p', namespaces=namespaces):
+    #             # Pobieramy cały tekst z akapitu
+    #             paragraph_text = " ".join(p.itertext()).strip()
+    #
+    #             # Sprawdzamy, czy tekst akapitu jest niepusty
+    #             if paragraph_text:
+    #                 # Opcjonalnie: możemy sprawdzić, czy tekst spełnia jakieś kryteria (np. wielka litera na początku)
+    #                 #if re.match(r"^[A-ZĄĆĘŁŃÓŚŹŻ]", paragraph_text):
+    #                 paragraph_texts.append(paragraph_text)
+    #
+    #         if paragraph_texts:
+    #             extracted_text.append(" ".join(paragraph_texts))
+    #
+    #     extracted_text = "\n".join(extracted_text)
+    #     with open(text_output_path, "w", encoding="utf-8") as text_file:
+    #         text_file.write(extracted_text)
+    #
+    #     return extracted_text
+
     def parse_grobid_xml_to_txt(self, xml_string: str, pdf_full_path: str) -> str:
         """
         Ekstrahuje tekst wyłącznie z <p> wewnątrz <div> w sekcji <body> XML TEI, ignorując inne elementy.
-        Łączy kolejne <p> dodając pojedynczą spację między nimi.
-        Uwzględnia brak segmentacji zdań (brak znaczników <s>).
+        Łączy tekst minimalizując nadmiarowe spacje i zachowując poprawną strukturę.
         """
         text_output_path = pdf_full_path.replace(".pdf", ".txt")
 
@@ -244,19 +284,34 @@ class ConvertFiles:
             print("Brak sekcji <body> w podanym XML.")
             return ""
 
+        def clean_text(text: str) -> str:
+            """Czysci tekst, usuwając nadmiarowe spacje i normalizując format."""
+            # Zamień wielokrotne spacje na pojedynczą
+            text = re.sub(r'\s+', ' ', text)
+            # Popraw spacje wokół kropek w numerach (np. "9 .6" -> "9.6")
+            text = re.sub(r'(\d)\s+\.(\d)', r'\1.\2', text)
+            # Usuń spacje przed kropkami i przecinkami
+            text = re.sub(r'\s+([,.])', r'\1', text)
+            return text.strip()
+
         extracted_text = []
 
         for div in body.findall('./tei:div', namespaces=namespaces):
             paragraph_texts = []
 
             for p in div.findall('.//tei:p', namespaces=namespaces):
-                # Pobieramy cały tekst z akapitu
-                paragraph_text = " ".join(p.itertext()).strip()
+                # Pobierz tekst, ale z lepszą kontrolą nad zagnieżdżonymi elementami
+                paragraph_text = ""
+                for node in p.iter():
+                    if node.text:
+                        paragraph_text += node.text
+                    if node.tail:
+                        paragraph_text += node.tail
 
-                # Sprawdzamy, czy tekst akapitu jest niepusty
+                # Wyczyść tekst
+                paragraph_text = clean_text(paragraph_text)
+
                 if paragraph_text:
-                    # Opcjonalnie: możemy sprawdzić, czy tekst spełnia jakieś kryteria (np. wielka litera na początku)
-                    #if re.match(r"^[A-ZĄĆĘŁŃÓŚŹŻ]", paragraph_text):
                     paragraph_texts.append(paragraph_text)
 
             if paragraph_texts:
