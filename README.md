@@ -1,4 +1,4 @@
-# 📚 Modular Text Retrieval System with Vector Databases
+# 📚 multivec-search 
 
 ## 🔍 Overview
 
