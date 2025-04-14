@@ -8,6 +8,10 @@ The project was built to explore and compare different approaches to embedding-b
 
 > ✅ Supports both **database-native search** and **standalone model-based retrieval** using vector similarity calculations (e.g., *cosine similarity*) with embeddings from `SentenceTransformers` or `FlagEmbedding` — fully decoupled from any storage engine.
 
+
+> ⚠️
+>This is a work in progress. Some parts are still under development or pending optimization.
+
 ---
 
 ![Demo](assets/simple_gif.gif)
@@ -31,11 +35,12 @@ The project was built to explore and compare different approaches to embedding-b
   - Search using database-native logic or model-only inference logic (vector similarity search without database).
 - **Hugging Face model compatibility**:
   - Models can be downloaded directly from the Hugging Face Hub.
-  - The system automatically evaluates model compatibility and selects the appropriate embedding types and libraries (e.g., SentenceTransformers or FlagEmbedding).
+  - The system automatically evaluates model compatibility and selects the appropriate embedding types and libraries (e.g., SentenceTransformers or/and FlagEmbedding).
 - **Test coverage**:
   - End-to-end tests validating embedding generation, storage, retrieval, and search.
 
 ---
+
 
 ## 🧱 Architecture
 
@@ -53,6 +58,8 @@ Includes:
 - `VectorDatabaseInfo`: Base class for all database strategies.
 - Enum-driven architecture for embedding types, segmentation, precision, and model libraries.
 - Factory pattern for dynamic search method selection.
+- Easily extensible: the architecture allows for straightforward integration of new vector database backends, embedding models, or retrieval strategies.
+
 
 ---
 
