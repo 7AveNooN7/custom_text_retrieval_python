@@ -101,7 +101,7 @@ def pdf_to_txt_tab():
         return files_settings_arg
 
 
-    with gr.Tab("🔎 PDF to TXT"):
+    with gr.Tab("🔎 PDF Text Extraction"):
         # STATES
         files_state = gr.State({})
         files_settings_state = gr.State({})
@@ -109,8 +109,6 @@ def pdf_to_txt_tab():
         interactive_state = gr.State(True)
         def update_interactive_state(state: bool):
             return state
-
-
 
         with gr.Row(
             equal_height=True
@@ -124,7 +122,7 @@ def pdf_to_txt_tab():
                     scale=1,
                     visible=True
                 )
-                database_text = gr.Text(label="Nazwa folderu:", visible=True)
+                database_text = gr.Text(label="Optional folder name:", visible=True)
 
 
             file_uploader.change(
@@ -196,9 +194,6 @@ def pdf_to_txt_tab():
                                             render=(pdf_file_info.filtered_toc is not True)
                                         )
 
-                                        # if not interactive_state_arg:
-                                        #     gr.HTML(value=get_waiting_css_with_custom_text(text=""))
-
                                     else:
                                         gr.HTML(value=get_waiting_css_with_custom_text(text="Analysis"))
 
@@ -207,9 +202,9 @@ def pdf_to_txt_tab():
             circular_progress = gr.HTML(value=get_waiting_css_with_custom_text(text="Processing .pdf files..."), visible=False)
             convert_button = gr.Button(value='Convert')
 
-
         def test_2(files_state_arg, files_settings_state_arg, database_folder_name: str):
             yield get_waiting_css_with_custom_text(text="Processing .pdf files...")
+            # TODO: potem gdy nie ma metody grobid w zadnym z plikow to nie tworzyc semaphore
             manager = Manager()
             grobid_semaphore = manager.Semaphore(GROBID_MAX_WORKERS)
             convert_files = ConvertFiles(
@@ -225,7 +220,7 @@ def pdf_to_txt_tab():
         convert_button.click(
             fn=lambda: (
                 gr.update(interactive=False, visible=False),
-                gr.update(interactive=False, visible=False),  # albo gr.update() jeśli nie chcesz nic zmieniać
+                gr.update(interactive=False, visible=False),
                 gr.update(visible=True),
                 gr.update(visible=False)
             ),
@@ -247,7 +242,7 @@ def pdf_to_txt_tab():
         ).then(
             fn=lambda: (
                 gr.update(interactive=True, visible=True),
-                gr.update(interactive=True, visible=True),  # albo gr.update() jeśli nie chcesz nic zmieniać
+                gr.update(interactive=True, visible=True),
                 gr.update(visible=False),
                 gr.update(visible=True)
             ),

@@ -9,7 +9,7 @@ from src.text_retrieval.perform_search import perform_search, get_search_type
 from src.text_retrieval.search_utils import fetch_saved_databases
 
 def search_database_tab():
-    with ((gr.Tab("🔎 Wyszukiwanie w bazie"))):
+    with ((gr.Tab("🔎 Database Search"))):
 
         ###################### DATABASE TYPE DROPDOWN ######################
         # STATE
@@ -57,7 +57,7 @@ def search_database_tab():
                     database_type_dropdown = gr.Dropdown(
                         choices=[db.display_name for db in DatabaseType],
                         value=None,
-                        label="Wybierz silnik bazy wektorowej"
+                        label="Select database engine"
                     )
 
                     # ZMIENIA STAN SAMEGO SIEBIE
@@ -105,7 +105,7 @@ def search_database_tab():
                     saved_database_dropdown = gr.Dropdown(
                         choices=choices,
                         value=None,
-                        label="📂 Wybierz bazę (Wyszukiwanie)"
+                        label="📂 Select saved database"
                     )
                     saved_database_dropdown.change(
                         update_selected_database_state,
@@ -161,7 +161,7 @@ def search_database_tab():
                 ):
                     query_input = gr.Textbox(
                         scale=2,
-                        label=f"🔎 Zapytanie {i + 1}",
+                        label=f"🔎 Query {i + 1}",
                         key=f"query_input_{query_list[i]}"
                     )
                     query_input.input(
@@ -212,10 +212,10 @@ def search_database_tab():
                 100,
                 10,
                 step=1,
-                label="🔝 Liczba najlepszych wyników",
+                label="🔝 Top-k",
                 scale=9
             )
-            add_query_btn = gr.Button("➕ Dodaj kolejne zapytanie", scale=1)
+            add_query_btn = gr.Button("➕ Add another query", scale=1)
 
         def add_query_component(query_list: List, added_count):
             added_count = added_count + 1
@@ -248,7 +248,7 @@ def search_database_tab():
 
                     choices.append((f'{vector_database_instance.transformer_library.display_name} search', vector_database_instance.transformer_library.display_name))
                     radio_buttons = gr.Radio(
-                        label='Wybierz metodę wyszukiwania',
+                        label='Select retrieval method',
                         choices=choices,
                         value=None
                     )
@@ -299,7 +299,7 @@ def search_database_tab():
 
                     ):
                         embeddings_checkboxes = gr.CheckboxGroup(
-                            label='Wybierz typy wektorów, które zostaną użyte do wyszukiwania wektorowego',
+                            label='Choose the vector types to use for vector-based retrieval',
                             choices=choices
                         )
 
@@ -316,7 +316,7 @@ def search_database_tab():
 
                         if features_choices:
                             features_checkboxes = gr.CheckboxGroup(
-                                label='Inne typy wyszukiwania',
+                                label='Other search types',
                                 choices=features_choices
                             )
 
@@ -327,7 +327,7 @@ def search_database_tab():
                             )
 
 
-        search_btn = gr.Button("🔍 Wyszukaj")
+        search_btn = gr.Button("🔍 Search")
 
 
         search_output_state = gr.State([])
@@ -347,10 +347,10 @@ def search_database_tab():
                 for i in range(len(search_output)):
                     print(f"{i}: {search_output[i]}")
                     with gr.Tab(
-                        label=f"Odpowiedz {i+1}"
+                        label=f"Result {i+1}"
                     ):
                         text_display = gr.Textbox(
-                            label="Wyniki wyszukiwania:",
+                            label="Search results:",
                             interactive=False,
                             value=search_output[i],
                             lines=100
@@ -359,7 +359,7 @@ def search_database_tab():
 def ui_search_database(database_type: str, vector_database_instance_json: str, query_list: List[str], top_k: int, search_method: str, vector_choices: List[str], features_choices: List[str]):
     database_type_enum: DatabaseType = DatabaseType.from_display_name(database_type)
     vector_database_instance: VectorDatabaseInfo = database_type_enum.db_class.from_dict(json.loads(vector_database_instance_json))
-    yield 1, "Trwa wyszukiwanie"
+    yield 1, "Searching in progress.."
     retrieved_text = perform_search(
         vector_database_instance=vector_database_instance,
         search_method=search_method,
@@ -372,8 +372,8 @@ def ui_search_database(database_type: str, vector_database_instance_json: str, q
     # characters_output = len(retrieved_text)
     # for i in range(len(retrieved_text)):
     #     print(f"{i}: {search_output}")
-    yield 100, "Trwa wyszukiwanie"
-    yield retrieved_text, "🔍 Wyszukaj"
+    yield 100, "Searching in progress.."
+    yield retrieved_text, "🔍 Search"
 
 
 

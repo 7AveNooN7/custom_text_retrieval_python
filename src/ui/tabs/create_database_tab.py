@@ -346,7 +346,7 @@ def create_database_tab():
 
                     segmentation_type_radio = gr.Radio(
                         label='✂️ Text segmentation type',
-                        value=TextSegmentationTypeEnum.TIK_TOKEN.value,
+                        value=TextSegmentationTypeEnum.CURRENT_MODEL_TOKENIZER.value,
                         choices=[ts.value for ts in TextSegmentationTypeEnum],
                         interactive=True,
                         scale=3

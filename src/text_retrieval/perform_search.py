@@ -44,14 +44,6 @@ def perform_search(
 
         text_chunks, chunks_metadata, embeddings = vector_database_instance.retrieve_from_database()
 
-        # try:
-        #     print(f'FUNCTION: embedding_types_checking')
-        #     embedding_types_checking(embeddings=embeddings, float_precision=vector_database_instance.float_precision, model_name=vector_database_instance.embedding_model_name)
-        # except Exception as e:
-        #     gr.Error(f"❌ Błąd w sprawdzaniu typów osadzeń: {e}")
-        #     traceback.print_exc()  # Wyświetli pełny stack trace w terminalu
-        #     return  # Zatrzymuje dalsze działanie funkcji
-
         final_results = search_type.perform_search(
             text_chunks=text_chunks,
             chunks_metadata=chunks_metadata,

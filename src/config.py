@@ -28,8 +28,8 @@ TXT_FOLDER = os.path.join(BASE_DIR, "..", "repository", "text_files")
 os.makedirs(TXT_FOLDER, exist_ok=True)
 
 # Inne ustawienia konfiguracyjne:
-DEFAULT_CHUNK_SIZE = 2000
-DEFAULT_CHUNK_OVERLAP = 400
+DEFAULT_CHUNK_SIZE = 512
+DEFAULT_CHUNK_OVERLAP = 128
 
 
 # PDF CHAPTERS TO AVOID
