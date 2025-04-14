@@ -78,15 +78,14 @@ class ConvertFiles:
 
         if file_settings.conversion_method == ConversionMethodEnum.SIMPLE:
             text_to_save = self.simple_method(file=file_value, file_settings=file_settings)
-            output_path = os.path.join(txt_folder_path, f"{file_name}.txt")
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(text_to_save)
+
 
         elif file_settings.conversion_method == ConversionMethodEnum.GROBID:
             text_to_save = self.grobid_method(file=file_value, file_settings=file_settings, folder_path=txt_folder_path)
-            output_path = os.path.join(txt_folder_path, f"{file_name}.txt")
-            # with open(output_path, "w", encoding="utf-8") as f:
-            #     f.write(text_to_save)
+
+        output_path = os.path.join(txt_folder_path, f"{file_name}.txt")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(text_to_save)
 
 
     def simple_method(self, file: PdfFileInfo, file_settings: FileSettingsModel) -> str:
@@ -122,23 +121,26 @@ class ConvertFiles:
         # tworzy podzielone .pdf dla grobid do przetowrzenia
         new_pdf_paths = self.create_split_pdf_files(file=file, file_settings=file_settings, current_file_folder_path=current_file_folder_path)
 
-        for new_pdf in new_pdf_paths:
-            print(f'{new_pdf}')
+        final_result = self.process_files_with_grobid(new_pdf_paths=new_pdf_paths)
+        text = ""
+        for key, value in final_result.items():
+            if text:
+                text = text + "\n" + value
+            else:
+                text = value
 
-        # tworzy xml'e z podzielonych .pdf
-        self.process_files_with_grobid(new_pdf_paths=new_pdf_paths)
+        return text
 
     def create_split_pdf_files(self, file: PdfFileInfo, file_settings: FileSettingsModel,
                                current_file_folder_path: str) -> List[str]:
         doc: pymupdf.Document = pymupdf.open(file.file_path)
 
-        chapters_to_iterate_for = file.filtered_chapter_info if (
-                    file_settings.use_filter and file.filtered_toc) else file.chapter_info
-        if chapters_to_iterate_for is None:
+        chapters_to_iterate_for = file.filtered_chapter_info if (file_settings.use_filter and file.filtered_toc) else file.chapter_info
+        if chapters_to_iterate_for is None or file.toc is False:
             chapters_to_iterate_for = file.synthetic_chapter_info
 
         def process_chapter(chapter_data: ChapterInfo):
-            print(f'chapterInfo: {chapter_data}')
+            #print(f'chapterInfo: {chapter_data}')
             reserve_name, chapter_info_value = chapter_data
             chapter_info_value = chapter_info_value[1]
             new_doc = pymupdf.open()
@@ -162,7 +164,11 @@ class ConvertFiles:
 
 
     def process_files_with_grobid(self, new_pdf_paths: List[str]):
-        # lista wszystkich pelnych sciezek plikow .pdf
+        # slownik do przechowywania stringow
+        final_strings_dict: Dict[str, str] = {path: "" for path in new_pdf_paths}
+        print('EMPTY: ')
+        for key, value in final_strings_dict.items():
+            print(f'{Path(key).stem}')
 
         # Semaphore blokuje i tak do 8
         with ThreadPoolExecutor() as executor:
@@ -175,10 +181,13 @@ class ConvertFiles:
             for future in as_completed(futures):
                 pdf_path = futures[future]
                 try:
-                    final_string = future.result()
+                    final_string_from_one_new_pdf = future.result()
+                    final_strings_dict[pdf_path] = final_string_from_one_new_pdf
                     print(f"Otrzymano wynik dla pliku {pdf_path}")
                 except Exception as exc:
                     print(f"Błąd dla pliku {pdf_path}: {exc}")
+
+        return final_strings_dict
 
     def process_with_grobid(self, pdf_full_path: str) -> str:
         xml_output_path = pdf_full_path.replace(".pdf", ".xml")
